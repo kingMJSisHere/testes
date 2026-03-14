@@ -1,6 +1,5 @@
--- // KING MJS FREE | v1.5
--- // Fix: fireproximityprompt target UpperTorso NPC
--- // Tambah: Auto Buy MS, Auto Sell MS
+-- // KING MJS FREE | v1.7
+-- // Fix: UI lebih kecil, jeda 5 detik Sugar→Gelatin
 
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
@@ -13,11 +12,12 @@ local UIS         = game:GetService("UserInputService")
 local Camera      = Workspace.CurrentCamera
 
 local Window = Library:CreateWindow({
-    Title        = 'KING MJS FREE  |  v1.5',
+    Title        = 'KING MJS FREE  |  v1.7',
     Center       = true,
     AutoShow     = true,
-    TabPadding   = 8,
-    MenuFadeTime = 0.2
+    TabPadding   = 4,
+    MenuFadeTime = 0.2,
+    Size         = UDim2.fromOffset(450, 340),
 })
 
 local Tabs = {
@@ -32,26 +32,45 @@ local function Notify(msg, dur)
     Library:Notify(msg, dur or 3)
 end
 
-Notify('👑 KING MJS FREE v1.5 loaded!', 4)
+Notify('👑 KING MJS FREE v1.7 loaded!', 4)
 
 -- ════════════════════════════════════════════════════════
---  HELPER FUNCTIONS
+--  HELPER
 -- ════════════════════════════════════════════════════════
 
--- Cari ProximityPrompt di UpperTorso NPC terdekat (bukan LocalPlayer)
-local function findNPCPrompt(maxDist)
-    maxDist = maxDist or 15
+-- Cari prompt di Box (untuk auto farm station)
+local function findBoxPrompt(maxDist)
+    maxDist = maxDist or 12
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
     local myPos = char.HumanoidRootPart.Position
     local closest, closestDist = nil, math.huge
-
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.Enabled and obj.ActionText == "Interact" then
             local parent = obj.Parent
-            -- Harus di UpperTorso atau HumanoidRootPart NPC
+            if parent and parent.Name == "Box" then
+                local dist = (parent.Position - myPos).Magnitude
+                if dist < maxDist and dist < closestDist then
+                    closestDist = dist
+                    closest = obj
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Cari prompt di NPC (UpperTorso) untuk buy/sell
+local function findNPCPrompt(maxDist)
+    maxDist = maxDist or 12
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = char.HumanoidRootPart.Position
+    local closest, closestDist = nil, math.huge
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled and obj.ActionText == "Interact" then
+            local parent = obj.Parent
             if parent and (parent.Name == "UpperTorso" or parent.Name == "HumanoidRootPart") then
-                -- Pastikan bukan karakter LocalPlayer
                 local model = parent.Parent
                 if model and model ~= char then
                     local dist = (parent.Position - myPos).Magnitude
@@ -66,23 +85,6 @@ local function findNPCPrompt(maxDist)
     return closest
 end
 
--- Teleport ke posisi NPC tertentu berdasarkan keyword nama model
-local function findNPCByKeyword(keywords)
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
-            local name = obj.Name:lower()
-            for _, kw in ipairs(keywords) do
-                if name:find(kw:lower()) then
-                    local hrp = obj:FindFirstChild("HumanoidRootPart")
-                    if hrp then return hrp end
-                end
-            end
-        end
-    end
-    return nil
-end
-
--- Fire prompt + tunggu sebentar
 local function firePrompt(prompt)
     if prompt then
         fireproximityprompt(prompt)
@@ -92,22 +94,18 @@ local function firePrompt(prompt)
     return false
 end
 
--- Teleport karakter ke posisi
-local function tpChar(x, y, z)
-    local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = CFrame.new(x, y + 3, z)
+local function selectItem(itemName)
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if not bp then return false end
+    for _, item in ipairs(bp:GetChildren()) do
+        if item:IsA("Tool") and item.Name:find(itemName) then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum:EquipTool(item) end
+            return true
+        end
     end
+    return false
 end
-
--- ════════════════════════════════════════════════════════
---  MAIN TAB
--- ════════════════════════════════════════════════════════
-local LeftMain  = Tabs.Main:AddLeftGroupbox('📦 Inventory')
-local RightMain = Tabs.Main:AddRightGroupbox('📊 Stats')
-
-local itemNames = {"Water", "Gelatin", "Sugar Block Bag", "Empty Bag"}
 
 local function countItem(name)
     local count = 0
@@ -117,6 +115,14 @@ local function countItem(name)
     if char then for _, i in ipairs(char:GetChildren()) do if i:IsA("Tool") and i.Name:find(name) then count += 1 end end end
     return count
 end
+
+-- ════════════════════════════════════════════════════════
+--  MAIN TAB
+-- ════════════════════════════════════════════════════════
+local LeftMain  = Tabs.Main:AddLeftGroupbox('📦 Inventory')
+local RightMain = Tabs.Main:AddRightGroupbox('📊 Stats')
+
+local itemNames = {"Water", "Gelatin", "Sugar Block Bag", "Empty Bag"}
 
 local invLabels = {}
 for _, name in ipairs(itemNames) do
@@ -151,26 +157,32 @@ end)
 
 -- ════════════════════════════════════════════════════════
 --  AUTO FARM TAB
+--  Timing fix:
+--  Step 1 Water     → tunggu 22 detik sebelum step 2
+--  Step 2 SugarBlock → langsung step 3
+--  Step 3 Gelatin   → tunggu 47 detik sebelum step 4
+--  Step 4 EmptyBag  → langsung loop
 -- ════════════════════════════════════════════════════════
 local LeftAuto  = Tabs.AutoFarm:AddLeftGroupbox('⚙️ Auto MS')
 local RightAuto = Tabs.AutoFarm:AddRightGroupbox('📋 Status')
 
-local autoFarm     = false
-local currentStep  = 1
-local stepCooldown = 0
+local autoFarm    = false
+local farmRunning = false
 
 local phaseNames = {
     [1] = "💧 Water",
     [2] = "🧂 Sugar Block",
     [3] = "🟡 Gelatin",
     [4] = "🎒 Empty Bag",
+    [5] = "⏳ Menunggu...",
 }
 
 local phaseLabel  = RightAuto:AddLabel('Phase   :  Idle', true)
 local stepLabel   = RightAuto:AddLabel('Step    :  1 / 4', true)
 local statusLabel = RightAuto:AddLabel('Status  :  OFF', true)
+local timerLabel  = RightAuto:AddLabel('Timer   :  -', true)
 
--- Cache instruction text dari PlayerGui (anti freeze)
+-- Cache instruction
 local cachedInstructions = {}
 task.spawn(function()
     while true do
@@ -194,55 +206,83 @@ local function hasInstruction(text)
     return false
 end
 
-local function selectItem(itemName)
-    local bp = LocalPlayer:FindFirstChild("Backpack")
-    if not bp then return false end
-    for _, item in ipairs(bp:GetChildren()) do
-        if item:IsA("Tool") and item.Name:find(itemName) then
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum:EquipTool(item) end
-            return true
-        end
+-- Countdown timer display
+local function countdown(seconds, label)
+    for i = seconds, 1, -1 do
+        if not autoFarm then return end
+        label:SetText('Timer   :  ' .. i .. 's')
+        task.wait(1)
     end
-    return false
+    label:SetText('Timer   :  -')
 end
 
--- Auto Farm loop — target prompt di UpperTorso NPC
+-- Auto farm loop utama
 task.spawn(function()
     while true do
         task.wait(0.3)
-        if not autoFarm then continue end
-        if stepCooldown > 0 then stepCooldown -= 0.3; continue end
+        if not autoFarm or farmRunning then continue end
+        farmRunning = true
 
-        phaseLabel:SetText('Phase   :  ' .. (phaseNames[currentStep] or 'Idle'))
-        stepLabel:SetText('Step    :  ' .. currentStep .. ' / 4')
+        -- STEP 1: Equip Water → interact
+        phaseLabel:SetText('Phase   :  ' .. phaseNames[1])
+        stepLabel:SetText('Step    :  1 / 4')
+        while autoFarm and not selectItem("Water") do task.wait(0.5) end
+        if not autoFarm then farmRunning = false; continue end
 
-        local prompt = findNPCPrompt(10)
+        local prompt = findBoxPrompt()
+        if prompt then firePrompt(prompt) end
+        Notify('💧 Water dimasukkan, tunggu 22 detik...', 3)
 
-        if currentStep == 1 and selectItem("Water") then
-            if prompt then firePrompt(prompt) end
-            currentStep = 2; stepCooldown = 1.5
+        -- Tunggu 22 detik (jeda Water → Sugar)
+        phaseLabel:SetText('Phase   :  ' .. phaseNames[5])
+        countdown(22, timerLabel)
+        if not autoFarm then farmRunning = false; continue end
 
-        elseif currentStep == 2 and hasInstruction("Dump the sugar block") and selectItem("Sugar Block Bag") then
-            if prompt then firePrompt(prompt) end
-            currentStep = 3; stepCooldown = 1.5
+        -- STEP 2: Equip Sugar Block → interact
+        phaseLabel:SetText('Phase   :  ' .. phaseNames[2])
+        stepLabel:SetText('Step    :  2 / 4')
+        while autoFarm and not selectItem("Sugar Block Bag") do task.wait(0.5) end
+        if not autoFarm then farmRunning = false; continue end
 
-        elseif currentStep == 3 and hasInstruction("Pour gelatin") and selectItem("Gelatin") then
-            if prompt then firePrompt(prompt) end
-            currentStep = 4; stepCooldown = 1.5
+        prompt = findBoxPrompt()
+        if prompt then firePrompt(prompt) end
+        Notify('🧂 Sugar Block dimasukkan, tunggu 5 detik...', 2)
 
-        elseif currentStep == 4 and hasInstruction("Bag the solution into the empty") and selectItem("Empty Bag") then
-            if prompt then firePrompt(prompt) end
-            marshmallowCount += 1
-            currentStep = 1; stepCooldown = 1.5
+        -- Tunggu 5 detik (jeda Sugar → Gelatin)
+        phaseLabel:SetText('Phase   :  ' .. phaseNames[5])
+        countdown(5, timerLabel)
+        if not autoFarm then farmRunning = false; continue end
 
-        elseif hasInstruction("You must hold out a bottle of water") then
-            currentStep = 1; stepCooldown = 1
+        -- STEP 3: Equip Gelatin → interact
+        phaseLabel:SetText('Phase   :  ' .. phaseNames[3])
+        stepLabel:SetText('Step    :  3 / 4')
+        while autoFarm and not selectItem("Gelatin") do task.wait(0.5) end
+        if not autoFarm then farmRunning = false; continue end
 
-        elseif not prompt then
-            -- Tidak ada NPC terdekat, tunggu sebentar
-            stepCooldown = 1
-        end
+        prompt = findBoxPrompt()
+        if prompt then firePrompt(prompt) end
+        Notify('🟡 Gelatin dimasukkan, tunggu 47 detik...', 3)
+
+        -- Tunggu 47 detik (jeda Gelatin → Empty Bag)
+        phaseLabel:SetText('Phase   :  ' .. phaseNames[5])
+        countdown(47, timerLabel)
+        if not autoFarm then farmRunning = false; continue end
+
+        -- STEP 4: Equip Empty Bag → interact
+        phaseLabel:SetText('Phase   :  ' .. phaseNames[4])
+        stepLabel:SetText('Step    :  4 / 4')
+        while autoFarm and not selectItem("Empty Bag") do task.wait(0.5) end
+        if not autoFarm then farmRunning = false; continue end
+
+        prompt = findBoxPrompt()
+        if prompt then firePrompt(prompt) end
+        marshmallowCount += 1
+        Notify('✅ Marshmellow selesai! Total: ' .. marshmallowCount, 2)
+
+        stepLabel:SetText('Step    :  1 / 4')
+        task.wait(0.5)
+        farmRunning = false
+        -- Loop ulang
     end
 end)
 
@@ -250,92 +290,127 @@ LeftAuto:AddToggle('AutoFarmToggle', {
     Text    = 'Auto-Farm Marshmallows',
     Default = false,
     Callback = function(v)
-        autoFarm        = v
+        autoFarm      = v
         autoFarmRunning = v
-        currentStep     = 1
-        stepCooldown    = 0
+        farmRunning   = false
         statusLabel:SetText('Status  :  ' .. (v and 'ON' or 'OFF'))
         if not v then
             phaseLabel:SetText('Phase   :  Idle')
             stepLabel:SetText('Step    :  1 / 4')
+            timerLabel:SetText('Timer   :  -')
         end
         Notify('⚙️ Auto Farm ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
     end
 })
 
--- ─── AUTO BUY ───────────────────────────────────────────
+-- ════════════════════════════════════════════════════════
+--  AUTO BUY / SELL
+-- ════════════════════════════════════════════════════════
 local LeftBuy = Tabs.AutoFarm:AddLeftGroupbox('🛒 Auto Buy / Sell')
 
-local autoBuy  = false
-local autoSell = false
+local autoBuy     = false
+local autoSell    = false
+local buyQty      = 5  -- default beli 5 per barang
+local buyRunning  = false
+local sellRunning = false
 
--- Koordinat toko beli bahan (sesuaikan jika perlu)
--- Untuk auto buy: teleport ke NPC toko, interact, beli item
+-- Slider jumlah beli
+LeftBuy:AddSlider('BuyQtySlider', {
+    Text    = 'Jumlah Beli per Barang',
+    Default = 5,
+    Min     = 1,
+    Max     = 20,
+    Rounding = 0,
+    Callback = function(v)
+        buyQty = v
+    end
+})
+
+-- Koordinat NPC beli/jual
 local buyCoords  = {x = 510.9961853027344, y = 3.5872106552124023, z = 598.3929443359375}
--- Koordinat jual marshmellow
 local sellCoords = {x = 510.9961853027344, y = 3.5872106552124023, z = 598.3929443359375}
 
--- Auto Buy loop: teleport ke NPC toko, interact beli Water + bahan
+-- Items yang dibeli: nama item → jumlah yg mau dibeli
+local buyItems = {"Water", "Gelatin", "Sugar Block Bag", "Empty Bag"}
+
+-- Auto Buy loop
 task.spawn(function()
     while true do
-        task.wait(1)
-        if not autoBuy then continue end
+        task.wait(0.5)
+        if not autoBuy or buyRunning then continue end
 
+        -- Cek apakah ada item yang kurang dari buyQty
+        local needBuy = false
+        for _, name in ipairs(buyItems) do
+            if countItem(name) < buyQty then
+                needBuy = true
+                break
+            end
+        end
+        if not needBuy then task.wait(2); continue end
+
+        buyRunning = true
+
+        -- Teleport ke NPC toko
         local char = LocalPlayer.Character
         local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
-
-        -- Teleport ke area toko beli
+        if not hrp then buyRunning = false; continue end
         hrp.CFrame = CFrame.new(buyCoords.x, buyCoords.y + 3, buyCoords.z)
         task.wait(0.8)
 
-        -- Cari prompt NPC di area toko
-        local prompt = findNPCPrompt(10)
-        if prompt then
-            firePrompt(prompt)
-            Notify('🛒 Auto Buy: Interact NPC', 2)
-        else
-            Notify('🛒 Auto Buy: NPC tidak ditemukan', 2)
+        -- Interact NPC sampai semua item terpenuhi
+        for _, name in ipairs(buyItems) do
+            local needed = buyQty - countItem(name)
+            if needed <= 0 then continue end
+
+            Notify('🛒 Beli ' .. needed .. 'x ' .. name, 2)
+            for i = 1, needed do
+                if not autoBuy then break end
+                local prompt = findNPCPrompt(10)
+                if prompt then
+                    firePrompt(prompt)
+                    task.wait(0.5)
+                end
+            end
         end
 
-        task.wait(3) -- jeda antar buy
+        Notify('✅ Auto Buy selesai!', 2)
+        buyRunning = false
+        task.wait(3)
     end
 end)
 
--- Auto Sell loop: teleport ke NPC jual, interact jual MS
+-- Auto Sell loop
 task.spawn(function()
     while true do
         task.wait(1)
-        if not autoSell then continue end
+        if not autoSell or sellRunning then continue end
 
-        -- Hanya jual kalau ada marshmellow di inventory
-        if countItem("Marshmallow") == 0 and countItem("Marshmellow") == 0 then
-            task.wait(2)
-            continue
-        end
+        local msCount = countItem("Marshmallow") + countItem("Marshmellow")
+        if msCount == 0 then task.wait(2); continue end
+
+        sellRunning = true
 
         local char = LocalPlayer.Character
         local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
+        if not hrp then sellRunning = false; continue end
 
-        -- Teleport ke area jual
         hrp.CFrame = CFrame.new(sellCoords.x, sellCoords.y + 3, sellCoords.z)
         task.wait(0.8)
 
-        -- Equip marshmellow dulu
         selectItem("Marshmallow")
         selectItem("Marshmellow")
         task.wait(0.3)
 
-        -- Cari prompt NPC jual
         local prompt = findNPCPrompt(10)
         if prompt then
             firePrompt(prompt)
             Notify('💰 Auto Sell: MS terjual!', 2)
         else
-            Notify('💰 Auto Sell: NPC jual tidak ditemukan', 2)
+            Notify('💰 Auto Sell: NPC tidak ditemukan', 2)
         end
 
+        sellRunning = false
         task.wait(3)
     end
 end)
@@ -343,7 +418,7 @@ end)
 LeftBuy:AddToggle('AutoBuyToggle', {
     Text    = '🛒 Auto Buy Bahan',
     Default = false,
-    Tooltip = 'Otomatis beli bahan (Water, Gelatin, dll)',
+    Tooltip = 'Beli bahan otomatis sesuai jumlah slider',
     Callback = function(v)
         autoBuy = v
         Notify('🛒 Auto Buy ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
@@ -353,7 +428,7 @@ LeftBuy:AddToggle('AutoBuyToggle', {
 LeftBuy:AddToggle('AutoSellToggle', {
     Text    = '💰 Auto Sell Marshmellow',
     Default = false,
-    Tooltip = 'Otomatis jual marshmellow ke NPC',
+    Tooltip = 'Jual marshmellow otomatis ke NPC',
     Callback = function(v)
         autoSell = v
         Notify('💰 Auto Sell ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
@@ -411,7 +486,6 @@ LeftTP:AddButton({
     Func = function()
         killAndTP(732.1171264648438, 3.3621320724487305, 406.0807189941406, 'Dealership')
     end,
-    Tooltip = 'Kill → Respawn → TP ke Dealership'
 })
 
 LeftTP:AddButton({
@@ -419,11 +493,10 @@ LeftTP:AddButton({
     Func = function()
         killAndTP(510.9961853027344, 3.5872106552124023, 598.3929443359375, 'Jual/Beli MS')
     end,
-    Tooltip = 'Kill → Respawn → TP ke Jual/Beli MS'
 })
 
 -- ════════════════════════════════════════════════════════
---  ESP TAB — BillboardGui (support semua executor)
+--  ESP TAB
 -- ════════════════════════════════════════════════════════
 local LeftESP  = Tabs.ESP:AddLeftGroupbox('👁️ Player ESP')
 local RightESP = Tabs.ESP:AddRightGroupbox('🎨 Warna')
@@ -456,54 +529,43 @@ local function createESPBillboard(player)
     container.Name  = "ESP_"..player.Name
     container.Parent = espFolder
 
-    -- Nama di atas kepala
     local bb = Instance.new("BillboardGui")
-    bb.Name          = "ESPBillboard"
-    bb.Size          = UDim2.new(0, 120, 0, 30)
-    bb.StudsOffset   = Vector3.new(0, 3.5, 0)
-    bb.AlwaysOnTop   = true
-    bb.Adornee       = hrp
-    bb.Parent        = hrp
+    bb.Name = "ESPBillboard"; bb.Size = UDim2.new(0,120,0,30)
+    bb.StudsOffset = Vector3.new(0,3.5,0); bb.AlwaysOnTop = true
+    bb.Adornee = hrp; bb.Parent = hrp
 
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size                   = UDim2.new(1, 0, 1, 0)
+    nameLabel.Size = UDim2.new(1,0,1,0)
     nameLabel.BackgroundTransparency = 1
-    nameLabel.Text                   = player.Name
-    nameLabel.TextColor3             = espColor
+    nameLabel.Text = player.Name
+    nameLabel.TextColor3 = espColor
     nameLabel.TextStrokeTransparency = 0
-    nameLabel.TextStrokeColor3       = Color3.new(0,0,0)
-    nameLabel.Font                   = Enum.Font.GothamBold
-    nameLabel.TextSize               = 14
-    nameLabel.Parent                 = bb
+    nameLabel.TextStrokeColor3 = Color3.new(0,0,0)
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 14
+    nameLabel.Parent = bb
 
-    -- Box 3D
     local selBox = Instance.new("SelectionBox")
-    selBox.Color3              = espColor
-    selBox.LineThickness       = 0.05
-    selBox.SurfaceTransparency = 1
-    selBox.Adornee             = char
-    selBox.Parent              = container
+    selBox.Color3 = espColor; selBox.LineThickness = 0.05
+    selBox.SurfaceTransparency = 1; selBox.Adornee = char
+    selBox.Parent = container
 
     task.spawn(function()
         while container.Parent do
             task.wait(0.1)
-            local alive = espEnabled
-                and char.Parent ~= nil
+            local alive = espEnabled and char.Parent ~= nil
                 and char:FindFirstChildOfClass("Humanoid") ~= nil
                 and char:FindFirstChildOfClass("Humanoid").Health > 0
-            bb.Enabled        = alive
-            selBox.Adornee    = alive and char or nil
+            bb.Enabled = alive
+            selBox.Adornee = alive and char or nil
             nameLabel.TextColor3 = espColor
-            selBox.Color3        = espColor
+            selBox.Color3 = espColor
         end
     end)
 
-    player.CharacterAdded:Connect(function(newChar)
+    player.CharacterAdded:Connect(function()
         container:Destroy()
-        if espEnabled then
-            task.wait(1)
-            createESPBillboard(player)
-        end
+        if espEnabled then task.wait(1); createESPBillboard(player) end
     end)
 end
 
@@ -540,55 +602,59 @@ for k in pairs(espColors) do table.insert(colorOptions, k) end
 table.sort(colorOptions)
 
 RightESP:AddDropdown('ESPColorDropdown', {
-    Values   = colorOptions,
-    Default  = 1,
-    Text     = 'Warna ESP',
-    Callback = function(v)
-        espColor = espColors[v]
-    end
+    Values = colorOptions, Default = 1, Text = 'Warna ESP',
+    Callback = function(v) espColor = espColors[v] end
 })
 
 -- ════════════════════════════════════════════════════════
---  SETTINGS TAB
+--  SETTINGS TAB — Keybind fix
 -- ════════════════════════════════════════════════════════
 local LeftSettings  = Tabs.Settings:AddLeftGroupbox('⌨️ Keybind UI')
 local RightSettings = Tabs.Settings:AddRightGroupbox('ℹ️ Info')
 
 RightSettings:AddLabel('KING MJS FREE', true)
-RightSettings:AddLabel('v1.5 | Mobile + PC', true)
+RightSettings:AddLabel('v1.7 | Mobile + PC', true)
 RightSettings:AddLabel('by majestyAllXyzZz', true)
 
 local currentKeybind = Enum.KeyCode.RightShift
-local keybindLabel   = LeftSettings:AddLabel('Keybind: RightShift', true)
 local listeningMode  = false
+local keybindLabel   = LeftSettings:AddLabel('Keybind saat ini: RightShift', true)
 
 LeftSettings:AddButton({
-    Text = '🎮 Atur Keybind Hide UI',
+    Text = '🎮 Atur Keybind Hide/Show UI',
     Func = function()
         listeningMode = true
-        keybindLabel:SetText('Keybind: [Tekan tombol...]')
-        Notify('🎮 Tekan tombol untuk keybind!', 3)
+        keybindLabel:SetText('Tekan tombol sekarang...')
+        Notify('🎮 Tekan tombol yang kamu mau!', 3)
     end,
-    Tooltip = 'Klik lalu tekan sembarang tombol'
 })
 
-LeftSettings:AddLabel('Default: RightShift', true)
+LeftSettings:AddLabel('• Klik tombol di atas', true)
+LeftSettings:AddLabel('• Lalu tekan key pilihan', true)
+LeftSettings:AddLabel('• Default: RightShift', true)
 
-UIS.InputBegan:Connect(function(input, gp)
+-- Fix keybind: pakai flag terpisah, cek di InputBegan
+local inputConn
+inputConn = UIS.InputBegan:Connect(function(input, gp)
+    -- Jangan proses jika game sudah handle input ini
     if gp then return end
+
     if listeningMode then
         if input.UserInputType == Enum.UserInputType.Keyboard then
             currentKeybind = input.KeyCode
-            keybindLabel:SetText('Keybind: ' .. input.KeyCode.Name)
+            keybindLabel:SetText('Keybind saat ini: ' .. input.KeyCode.Name)
             listeningMode = false
-            Notify('✅ Keybind: ' .. input.KeyCode.Name, 2)
+            Notify('✅ Keybind diset ke: ' .. input.KeyCode.Name, 3)
         end
-        return
+        return -- jangan lanjut ke toggle
     end
-    if input.KeyCode == currentKeybind then
+
+    -- Toggle UI
+    if input.UserInputType == Enum.UserInputType.Keyboard
+        and input.KeyCode == currentKeybind then
         Library:ToggleUI()
     end
 end)
 
-Library:SetWatermark('KING MJS FREE  |  v1.5')
+Library:SetWatermark('KING MJS FREE  |  v1.7')
 Library:SetWatermarkVisibility(true)
