@@ -1,111 +1,448 @@
--- // KING MJS FREE | v1.7
--- // Fix: UI lebih kecil, jeda 5 detik Sugar→Gelatin
+-- // KING MJS FREE | v2.0
+-- // Custom GUI: Draggable, Minimize, Tabs
+-- // Auto Farm: logic original (VirtualInputManager)
 
-local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
-local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local Players             = game:GetService("Players")
+local LocalPlayer         = Players.LocalPlayer
+local RunService          = game:GetService("RunService")
+local Workspace           = game:GetService("Workspace")
+local UIS                 = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService        = game:GetService("TweenService")
+local Camera              = Workspace.CurrentCamera
 
-local Players     = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local RunService  = game:GetService("RunService")
-local Workspace   = game:GetService("Workspace")
-local UIS         = game:GetService("UserInputService")
-local Camera      = Workspace.CurrentCamera
+repeat task.wait() until LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
 
-local Window = Library:CreateWindow({
-    Title        = 'KING MJS FREE  |  v1.7',
-    Center       = true,
-    AutoShow     = true,
-    TabPadding   = 4,
-    MenuFadeTime = 0.2,
-    Size         = UDim2.fromOffset(450, 340),
+-- ════════════════════════════════════════════════════════
+--  MAIN GUI
+-- ════════════════════════════════════════════════════════
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "KINGMJSFREE"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 420, 0, 520)
+mainFrame.Position = UDim2.new(0.5, -210, 0.5, -260)
+mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 18)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+
+-- Border glow
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(0, 120, 255)
+stroke.Thickness = 2
+stroke.Parent = mainFrame
+
+-- ─── HEADER ────────────────────────────────────────────
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 56)
+header.BackgroundColor3 = Color3.fromRGB(0, 80, 180)
+header.BorderSizePixel = 0
+header.Parent = mainFrame
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 12)
+
+local headerGrad = Instance.new("UIGradient")
+headerGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 100, 220)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 50, 150)),
 })
+headerGrad.Rotation = 90
+headerGrad.Parent = header
 
-local Tabs = {
-    Main     = Window:AddTab('Main'),
-    AutoFarm = Window:AddTab('Auto Farm'),
-    Teleport = Window:AddTab('Teleport'),
-    ESP      = Window:AddTab('ESP'),
-    Settings = Window:AddTab('Settings'),
-}
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size = UDim2.new(1, -120, 1, 0)
+titleLbl.Position = UDim2.new(0, 14, 0, 0)
+titleLbl.BackgroundTransparency = 1
+titleLbl.Text = "👑 KING MJS FREE"
+titleLbl.TextColor3 = Color3.new(1,1,1)
+titleLbl.Font = Enum.Font.GothamBlack
+titleLbl.TextSize = 20
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+titleLbl.Parent = header
 
-local function Notify(msg, dur)
-    Library:Notify(msg, dur or 3)
+local subLbl = Instance.new("TextLabel")
+subLbl.Size = UDim2.new(1, -120, 0, 16)
+subLbl.Position = UDim2.new(0, 14, 0, 34)
+subLbl.BackgroundTransparency = 1
+subLbl.Text = "by qie and arul  •  v2.0"
+subLbl.TextColor3 = Color3.fromRGB(180, 210, 255)
+subLbl.Font = Enum.Font.Gotham
+subLbl.TextSize = 11
+subLbl.TextXAlignment = Enum.TextXAlignment.Left
+subLbl.Parent = header
+
+-- Header buttons
+local function makeHeaderBtn(x, bg, txt, size)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 28, 0, 28)
+    btn.Position = UDim2.new(1, x, 0.5, -14)
+    btn.BackgroundColor3 = bg
+    btn.Text = txt
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextSize = size or 18
+    btn.Font = Enum.Font.GothamBold
+    btn.BorderSizePixel = 0
+    btn.Parent = header
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 7)
+    return btn
 end
 
-Notify('👑 KING MJS FREE v1.7 loaded!', 4)
+local minBtn   = makeHeaderBtn(-100, Color3.fromRGB(255, 180, 0), "−", 22)
+local closeBtn = makeHeaderBtn(-66,  Color3.fromRGB(220, 50, 50),  "✕", 18)
+
+-- ─── TAB BAR ───────────────────────────────────────────
+local tabBar = Instance.new("Frame")
+tabBar.Size = UDim2.new(1, -16, 0, 36)
+tabBar.Position = UDim2.new(0, 8, 0, 62)
+tabBar.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+tabBar.BorderSizePixel = 0
+tabBar.Parent = mainFrame
+Instance.new("UICorner", tabBar).CornerRadius = UDim.new(0, 8)
+
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+tabLayout.Padding = UDim.new(0, 4)
+tabLayout.Parent = tabBar
+
+local tabPadding = Instance.new("UIPadding")
+tabPadding.PaddingLeft = UDim.new(0, 6)
+tabPadding.Parent = tabBar
+
+-- ─── CONTENT AREA ──────────────────────────────────────
+local contentArea = Instance.new("Frame")
+contentArea.Size = UDim2.new(1, -16, 1, -110)
+contentArea.Position = UDim2.new(0, 8, 0, 104)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
+
+-- ─── MINIMIZE LOGIC ────────────────────────────────────
+local isMinimized = false
+local fullHeight  = UDim2.new(0, 420, 0, 520)
+local miniHeight  = UDim2.new(0, 420, 0, 56)
+
+local function toggleMinimize()
+    isMinimized = not isMinimized
+    local target = isMinimized and miniHeight or fullHeight
+    TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Size = target}):Play()
+    tabBar.Visible    = not isMinimized
+    contentArea.Visible = not isMinimized
+    minBtn.Text = isMinimized and "□" or "−"
+end
+
+minBtn.MouseButton1Click:Connect(toggleMinimize)
+closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
+
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.K then toggleMinimize() end
+end)
+
+-- ─── HELPER: MAKE TAB ──────────────────────────────────
+local tabs = {}
+local tabPages = {}
+local activeTab = nil
+
+local function makeTab(name)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 80, 0, 28)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(160, 160, 180)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.BorderSizePixel = 0
+    btn.Parent = tabBar
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+    local page = Instance.new("ScrollingFrame")
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 3
+    page.ScrollBarImageColor3 = Color3.fromRGB(0, 120, 255)
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.Visible = false
+    page.Parent = contentArea
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 6)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = page
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 4)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.Parent = page
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 12)
+    end)
+
+    tabs[name] = btn
+    tabPages[name] = page
+
+    btn.MouseButton1Click:Connect(function()
+        -- Deactivate all
+        for n, b in pairs(tabs) do
+            b.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+            b.TextColor3 = Color3.fromRGB(160, 160, 180)
+            tabPages[n].Visible = false
+        end
+        -- Activate this
+        btn.BackgroundColor3 = Color3.fromRGB(0, 100, 220)
+        btn.TextColor3 = Color3.new(1,1,1)
+        page.Visible = true
+        activeTab = name
+    end)
+
+    return page
+end
+
+-- ─── HELPER: UI ELEMENTS ───────────────────────────────
+local function makeSection(parent, title)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 0, 22)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "  " .. title
+    lbl.TextColor3 = Color3.fromRGB(0, 180, 255)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.LayoutOrder = 0
+    lbl.Parent = parent
+    return lbl
+end
+
+local function makeLabel(parent, text, color, order)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 36)
+    f.BackgroundColor3 = Color3.fromRGB(20, 20, 32)
+    f.BorderSizePixel = 0
+    f.LayoutOrder = order or 1
+    f.Parent = parent
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 7)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -12, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = color or Color3.fromRGB(200, 200, 220)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = f
+    return lbl, f
+end
+
+local function makeToggle(parent, text, default, order, callback)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 40)
+    f.BackgroundColor3 = Color3.fromRGB(20, 20, 32)
+    f.BorderSizePixel = 0
+    f.LayoutOrder = order
+    f.Parent = parent
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 7)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -60, 1, 0)
+    lbl.Position = UDim2.new(0, 12, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = Color3.fromRGB(220, 220, 240)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = f
+
+    local toggleBg = Instance.new("Frame")
+    toggleBg.Size = UDim2.new(0, 44, 0, 22)
+    toggleBg.Position = UDim2.new(1, -54, 0.5, -11)
+    toggleBg.BackgroundColor3 = default and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 80)
+    toggleBg.BorderSizePixel = 0
+    toggleBg.Parent = f
+    Instance.new("UICorner", toggleBg).CornerRadius = UDim.new(1, 0)
+
+    local circle = Instance.new("Frame")
+    circle.Size = UDim2.new(0, 16, 0, 16)
+    circle.Position = default and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    circle.BackgroundColor3 = Color3.new(1,1,1)
+    circle.BorderSizePixel = 0
+    circle.Parent = toggleBg
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+
+    local value = default
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = f
+
+    btn.MouseButton1Click:Connect(function()
+        value = not value
+        TweenService:Create(toggleBg, TweenInfo.new(0.15), {
+            BackgroundColor3 = value and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 80)
+        }):Play()
+        TweenService:Create(circle, TweenInfo.new(0.15), {
+            Position = value and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+        }):Play()
+        if callback then callback(value) end
+    end)
+    return f, function() return value end
+end
+
+local function makeButton(parent, text, color, order, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.BackgroundColor3 = color or Color3.fromRGB(0, 100, 220)
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.BorderSizePixel = 0
+    btn.LayoutOrder = order
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+    btn.MouseButton1Click:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.08), {
+            BackgroundColor3 = Color3.fromRGB(
+                math.clamp(color.R * 255 * 0.7, 0, 255),
+                math.clamp(color.G * 255 * 0.7, 0, 255),
+                math.clamp(color.B * 255 * 0.7, 0, 255)
+            )
+        }):Play()
+        task.delay(0.1, function()
+            TweenService:Create(btn, TweenInfo.new(0.08), {BackgroundColor3 = color}):Play()
+        end)
+        if callback then callback() end
+    end)
+    return btn
+end
+
+local function makeDropdown(parent, text, options, order, callback)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 40)
+    f.BackgroundColor3 = Color3.fromRGB(20, 20, 32)
+    f.BorderSizePixel = 0
+    f.LayoutOrder = order
+    f.ClipsDescendants = false
+    f.Parent = parent
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 7)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.5, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 12, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = Color3.fromRGB(220, 220, 240)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = f
+
+    local selected = options[1]
+    local valBtn = Instance.new("TextButton")
+    valBtn.Size = UDim2.new(0.45, 0, 0, 28)
+    valBtn.Position = UDim2.new(0.53, 0, 0.5, -14)
+    valBtn.BackgroundColor3 = Color3.fromRGB(0, 80, 180)
+    valBtn.Text = selected .. " ▾"
+    valBtn.TextColor3 = Color3.new(1,1,1)
+    valBtn.Font = Enum.Font.GothamBold
+    valBtn.TextSize = 12
+    valBtn.BorderSizePixel = 0
+    valBtn.ZIndex = 5
+    valBtn.Parent = f
+    Instance.new("UICorner", valBtn).CornerRadius = UDim.new(0, 6)
+
+    local dropOpen = false
+    local dropFrame = nil
+
+    valBtn.MouseButton1Click:Connect(function()
+        if dropOpen then
+            if dropFrame then dropFrame:Destroy() end
+            dropOpen = false
+            return
+        end
+        dropOpen = true
+        dropFrame = Instance.new("Frame")
+        dropFrame.Size = UDim2.new(0.45, 0, 0, #options * 30 + 4)
+        dropFrame.Position = UDim2.new(0.53, 0, 1, 4)
+        dropFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+        dropFrame.BorderSizePixel = 0
+        dropFrame.ZIndex = 10
+        dropFrame.Parent = f
+        Instance.new("UICorner", dropFrame).CornerRadius = UDim.new(0, 7)
+        Instance.new("UIStroke", dropFrame).Color = Color3.fromRGB(0, 100, 200)
+
+        for i, opt in ipairs(options) do
+            local optBtn = Instance.new("TextButton")
+            optBtn.Size = UDim2.new(1, -4, 0, 28)
+            optBtn.Position = UDim2.new(0, 2, 0, (i-1)*30 + 2)
+            optBtn.BackgroundTransparency = 1
+            optBtn.Text = opt
+            optBtn.TextColor3 = Color3.fromRGB(200, 200, 220)
+            optBtn.Font = Enum.Font.Gotham
+            optBtn.TextSize = 12
+            optBtn.ZIndex = 11
+            optBtn.Parent = dropFrame
+
+            optBtn.MouseButton1Click:Connect(function()
+                selected = opt
+                valBtn.Text = opt .. " ▾"
+                dropFrame:Destroy()
+                dropOpen = false
+                if callback then callback(opt) end
+            end)
+        end
+    end)
+    return f
+end
 
 -- ════════════════════════════════════════════════════════
---  HELPER
+--  CREATE TABS
 -- ════════════════════════════════════════════════════════
+local pageMain     = makeTab("📦 Main")
+local pageAuto     = makeTab("⚙️ Auto")
+local pageTeleport = makeTab("📍 TP")
+local pageESP      = makeTab("👁️ ESP")
+local pageSettings = makeTab("⚙️ Set")
 
--- Cari prompt di Box (untuk auto farm station)
-local function findBoxPrompt(maxDist)
-    maxDist = maxDist or 12
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = char.HumanoidRootPart.Position
-    local closest, closestDist = nil, math.huge
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Enabled and obj.ActionText == "Interact" then
-            local parent = obj.Parent
-            if parent and parent.Name == "Box" then
-                local dist = (parent.Position - myPos).Magnitude
-                if dist < maxDist and dist < closestDist then
-                    closestDist = dist
-                    closest = obj
-                end
-            end
-        end
-    end
-    return closest
+-- Activate first tab
+tabs["📦 Main"].BackgroundColor3 = Color3.fromRGB(0, 100, 220)
+tabs["📦 Main"].TextColor3 = Color3.new(1,1,1)
+pageMain.Visible = true
+activeTab = "📦 Main"
+
+-- ════════════════════════════════════════════════════════
+--  MAIN TAB — Inventory + Stats
+-- ════════════════════════════════════════════════════════
+makeSection(pageMain, "📦 Inventory")
+
+local itemNames = {"Water", "Gelatin", "Sugar Block Bag", "Empty Bag"}
+local itemLabelRefs = {}
+for i, name in ipairs(itemNames) do
+    local lbl, _ = makeLabel(pageMain, name .. "  ›  0", Color3.fromRGB(160, 160, 180), i+1)
+    itemLabelRefs[name] = lbl
 end
 
--- Cari prompt di NPC (UpperTorso) untuk buy/sell
-local function findNPCPrompt(maxDist)
-    maxDist = maxDist or 12
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = char.HumanoidRootPart.Position
-    local closest, closestDist = nil, math.huge
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Enabled and obj.ActionText == "Interact" then
-            local parent = obj.Parent
-            if parent and (parent.Name == "UpperTorso" or parent.Name == "HumanoidRootPart") then
-                local model = parent.Parent
-                if model and model ~= char then
-                    local dist = (parent.Position - myPos).Magnitude
-                    if dist < maxDist and dist < closestDist then
-                        closestDist = dist
-                        closest = obj
-                    end
-                end
-            end
-        end
-    end
-    return closest
-end
+makeSection(pageMain, "📊 Stats")
 
-local function firePrompt(prompt)
-    if prompt then
-        fireproximityprompt(prompt)
-        task.wait(0.4)
-        return true
-    end
-    return false
-end
+local timeElapsed      = 0
+local marshmallowCount = 0
+local autoFarmRunning  = false
 
-local function selectItem(itemName)
-    local bp = LocalPlayer:FindFirstChild("Backpack")
-    if not bp then return false end
-    for _, item in ipairs(bp:GetChildren()) do
-        if item:IsA("Tool") and item.Name:find(itemName) then
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum:EquipTool(item) end
-            return true
-        end
-    end
-    return false
-end
+local timeLblRef, _ = makeLabel(pageMain, "Time  ›  0h 0m 0s", Color3.fromRGB(160, 160, 180), 10)
+local msLblRef,   _ = makeLabel(pageMain, "MS    ›  0  ($0)",   Color3.fromRGB(160, 160, 180), 11)
 
 local function countItem(name)
     local count = 0
@@ -116,32 +453,16 @@ local function countItem(name)
     return count
 end
 
--- ════════════════════════════════════════════════════════
---  MAIN TAB
--- ════════════════════════════════════════════════════════
-local LeftMain  = Tabs.Main:AddLeftGroupbox('📦 Inventory')
-local RightMain = Tabs.Main:AddRightGroupbox('📊 Stats')
-
-local itemNames = {"Water", "Gelatin", "Sugar Block Bag", "Empty Bag"}
-
-local invLabels = {}
-for _, name in ipairs(itemNames) do
-    invLabels[name] = LeftMain:AddLabel(name .. '  :  0', true)
-end
-
-local timeElapsed      = 0
-local marshmallowCount = 0
-local autoFarmRunning  = false
-
-local timeLabel = RightMain:AddLabel('Time  :  0h 0m 0s', true)
-local msLabel   = RightMain:AddLabel('MS    :  0  ($0)', true)
-
 task.spawn(function()
     while true do
         task.wait(1)
         for _, name in ipairs(itemNames) do
-            if invLabels[name] then
-                invLabels[name]:SetText(name .. '  :  ' .. countItem(name))
+            if itemLabelRefs[name] then
+                local c = countItem(name)
+                itemLabelRefs[name].Text = name .. "  ›  " .. c
+                itemLabelRefs[name].TextColor3 = c > 0
+                    and Color3.fromRGB(0, 220, 120)
+                    or  Color3.fromRGB(120, 120, 140)
             end
         end
         if autoFarmRunning then
@@ -149,304 +470,106 @@ task.spawn(function()
             local h = math.floor(timeElapsed/3600)
             local m = math.floor((timeElapsed%3600)/60)
             local s = timeElapsed % 60
-            timeLabel:SetText('Time  :  '..h..'h '..m..'m '..s..'s')
-            msLabel:SetText('MS    :  '..marshmallowCount..'  ($'..(marshmallowCount*950)..')')
+            timeLblRef.Text = "Time  ›  "..h.."h "..m.."m "..s.."s"
+            msLblRef.Text   = "MS    ›  "..marshmallowCount.."  ($"..(marshmallowCount*950)..")"
         end
     end
 end)
 
 -- ════════════════════════════════════════════════════════
 --  AUTO FARM TAB
---  Timing fix:
---  Step 1 Water     → tunggu 22 detik sebelum step 2
---  Step 2 SugarBlock → langsung step 3
---  Step 3 Gelatin   → tunggu 47 detik sebelum step 4
---  Step 4 EmptyBag  → langsung loop
 -- ════════════════════════════════════════════════════════
-local LeftAuto  = Tabs.AutoFarm:AddLeftGroupbox('⚙️ Auto MS')
-local RightAuto = Tabs.AutoFarm:AddRightGroupbox('📋 Status')
+makeSection(pageAuto, "⚙️ Auto Marshmellow")
 
-local autoFarm    = false
-local farmRunning = false
+local autoFarm     = false
+local currentStep  = 1
+local stepCooldown = 0
+local lastCheck    = 0
 
 local phaseNames = {
     [1] = "💧 Water",
     [2] = "🧂 Sugar Block",
     [3] = "🟡 Gelatin",
     [4] = "🎒 Empty Bag",
-    [5] = "⏳ Menunggu...",
 }
 
-local phaseLabel  = RightAuto:AddLabel('Phase   :  Idle', true)
-local stepLabel   = RightAuto:AddLabel('Step    :  1 / 4', true)
-local statusLabel = RightAuto:AddLabel('Status  :  OFF', true)
-local timerLabel  = RightAuto:AddLabel('Timer   :  -', true)
+local statusLblRef, _ = makeLabel(pageAuto, "STATUS  ›  OFF",   Color3.fromRGB(255, 80, 80),   2)
+local phaseLblRef,  _ = makeLabel(pageAuto, "PHASE   ›  Idle",  Color3.fromRGB(0, 200, 255),   3)
+local stepLblRef,   _ = makeLabel(pageAuto, "STEP    ›  1 / 4", Color3.fromRGB(255, 210, 50),  4)
 
--- Cache instruction
-local cachedInstructions = {}
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if not autoFarm then continue end
-        cachedInstructions = {}
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then continue end
-        for _, ui in ipairs(pg:GetDescendants()) do
-            if (ui:IsA("TextLabel") or ui:IsA("TextButton")) and ui.Text and #ui.Text > 0 then
-                cachedInstructions[#cachedInstructions+1] = ui.Text
-            end
-        end
+makeToggle(pageAuto, "Auto-Farm Marshmallows", false, 5, function(v)
+    autoFarm        = v
+    autoFarmRunning = v
+    currentStep     = 1
+    stepCooldown    = 0
+    lastCheck       = 0
+    statusLblRef.Text = "STATUS  ›  " .. (v and "ON" or "OFF")
+    statusLblRef.TextColor3 = v and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(255, 80, 80)
+    if not v then
+        phaseLblRef.Text = "PHASE   ›  Idle"
+        stepLblRef.Text  = "STEP    ›  1 / 4"
     end
 end)
 
+-- Auto farm logic persis original
+local function pressE()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.25)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
 local function hasInstruction(text)
-    for _, t in ipairs(cachedInstructions) do
-        if t:find(text) then return true end
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return false end
+    for _, ui in ipairs(pg:GetDescendants()) do
+        if ui:IsA("TextLabel") or ui:IsA("TextButton") then
+            local t = ui.Text
+            if t and t:find(text) then return true end
+        end
     end
     return false
 end
 
--- Countdown timer display
-local function countdown(seconds, label)
-    for i = seconds, 1, -1 do
-        if not autoFarm then return end
-        label:SetText('Timer   :  ' .. i .. 's')
-        task.wait(1)
+local function selectInventoryItem(itemName)
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if not bp then return false end
+    for _, item in ipairs(bp:GetChildren()) do
+        if item:IsA("Tool") and item.Name:find(itemName) then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(item)
+            return true
+        end
     end
-    label:SetText('Timer   :  -')
+    return false
 end
 
--- Auto farm loop utama
-task.spawn(function()
-    while true do
-        task.wait(0.3)
-        if not autoFarm or farmRunning then continue end
-        farmRunning = true
+RunService.Heartbeat:Connect(function(dt)
+    if not autoFarm then return end
+    stepCooldown = math.max(0, stepCooldown - dt)
+    if stepCooldown > 0 then return end
+    lastCheck = lastCheck + dt
+    if lastCheck < 0.3 then return end
+    lastCheck = 0
 
-        -- STEP 1: Equip Water → interact
-        phaseLabel:SetText('Phase   :  ' .. phaseNames[1])
-        stepLabel:SetText('Step    :  1 / 4')
-        while autoFarm and not selectItem("Water") do task.wait(0.5) end
-        if not autoFarm then farmRunning = false; continue end
+    phaseLblRef.Text = "PHASE   ›  " .. (phaseNames[currentStep] or "Idle")
+    stepLblRef.Text  = "STEP    ›  " .. currentStep .. " / 4"
 
-        local prompt = findBoxPrompt()
-        if prompt then firePrompt(prompt) end
-        Notify('💧 Water dimasukkan, tunggu 22 detik...', 3)
-
-        -- Tunggu 22 detik (jeda Water → Sugar)
-        phaseLabel:SetText('Phase   :  ' .. phaseNames[5])
-        countdown(22, timerLabel)
-        if not autoFarm then farmRunning = false; continue end
-
-        -- STEP 2: Equip Sugar Block → interact
-        phaseLabel:SetText('Phase   :  ' .. phaseNames[2])
-        stepLabel:SetText('Step    :  2 / 4')
-        while autoFarm and not selectItem("Sugar Block Bag") do task.wait(0.5) end
-        if not autoFarm then farmRunning = false; continue end
-
-        prompt = findBoxPrompt()
-        if prompt then firePrompt(prompt) end
-        Notify('🧂 Sugar Block dimasukkan, tunggu 5 detik...', 2)
-
-        -- Tunggu 5 detik (jeda Sugar → Gelatin)
-        phaseLabel:SetText('Phase   :  ' .. phaseNames[5])
-        countdown(5, timerLabel)
-        if not autoFarm then farmRunning = false; continue end
-
-        -- STEP 3: Equip Gelatin → interact
-        phaseLabel:SetText('Phase   :  ' .. phaseNames[3])
-        stepLabel:SetText('Step    :  3 / 4')
-        while autoFarm and not selectItem("Gelatin") do task.wait(0.5) end
-        if not autoFarm then farmRunning = false; continue end
-
-        prompt = findBoxPrompt()
-        if prompt then firePrompt(prompt) end
-        Notify('🟡 Gelatin dimasukkan, tunggu 47 detik...', 3)
-
-        -- Tunggu 47 detik (jeda Gelatin → Empty Bag)
-        phaseLabel:SetText('Phase   :  ' .. phaseNames[5])
-        countdown(47, timerLabel)
-        if not autoFarm then farmRunning = false; continue end
-
-        -- STEP 4: Equip Empty Bag → interact
-        phaseLabel:SetText('Phase   :  ' .. phaseNames[4])
-        stepLabel:SetText('Step    :  4 / 4')
-        while autoFarm and not selectItem("Empty Bag") do task.wait(0.5) end
-        if not autoFarm then farmRunning = false; continue end
-
-        prompt = findBoxPrompt()
-        if prompt then firePrompt(prompt) end
-        marshmallowCount += 1
-        Notify('✅ Marshmellow selesai! Total: ' .. marshmallowCount, 2)
-
-        stepLabel:SetText('Step    :  1 / 4')
-        task.wait(0.5)
-        farmRunning = false
-        -- Loop ulang
+    if currentStep == 1 and selectInventoryItem("Water") then
+        pressE(); currentStep = 2; stepCooldown = 1
+    elseif currentStep == 2 and hasInstruction("Dump the sugar block") and selectInventoryItem("Sugar Block Bag") then
+        pressE(); currentStep = 3; stepCooldown = 1
+    elseif currentStep == 3 and hasInstruction("Pour gelatin") and selectInventoryItem("Gelatin") then
+        pressE(); currentStep = 4; stepCooldown = 1
+    elseif currentStep == 4 and hasInstruction("Bag the solution into the empty") and selectInventoryItem("Empty Bag") then
+        pressE(); marshmallowCount += 1; currentStep = 1; stepCooldown = 1
+    elseif hasInstruction("You must hold out a bottle of water") then
+        currentStep = 1; stepCooldown = 1
     end
 end)
-
-LeftAuto:AddToggle('AutoFarmToggle', {
-    Text    = 'Auto-Farm Marshmallows',
-    Default = false,
-    Callback = function(v)
-        autoFarm      = v
-        autoFarmRunning = v
-        farmRunning   = false
-        statusLabel:SetText('Status  :  ' .. (v and 'ON' or 'OFF'))
-        if not v then
-            phaseLabel:SetText('Phase   :  Idle')
-            stepLabel:SetText('Step    :  1 / 4')
-            timerLabel:SetText('Timer   :  -')
-        end
-        Notify('⚙️ Auto Farm ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
-    end
-})
-
--- ════════════════════════════════════════════════════════
---  AUTO BUY / SELL
--- ════════════════════════════════════════════════════════
-local LeftBuy = Tabs.AutoFarm:AddLeftGroupbox('🛒 Auto Buy / Sell')
-
-local autoBuy     = false
-local autoSell    = false
-local buyQty      = 5  -- default beli 5 per barang
-local buyRunning  = false
-local sellRunning = false
-
--- Slider jumlah beli
-LeftBuy:AddSlider('BuyQtySlider', {
-    Text    = 'Jumlah Beli per Barang',
-    Default = 5,
-    Min     = 1,
-    Max     = 20,
-    Rounding = 0,
-    Callback = function(v)
-        buyQty = v
-    end
-})
-
--- Koordinat NPC beli/jual
-local buyCoords  = {x = 510.9961853027344, y = 3.5872106552124023, z = 598.3929443359375}
-local sellCoords = {x = 510.9961853027344, y = 3.5872106552124023, z = 598.3929443359375}
-
--- Items yang dibeli: nama item sesuai nama di game
-local buyItems = {"Air", "Gelatin", "Tas Blok Gula"}
-
--- Auto Buy loop — fix anti freeze
-task.spawn(function()
-    while true do
-        task.wait(2) -- jeda lebih panjang antar cek
-        if not autoBuy or buyRunning then continue end
-
-        -- Cek apakah ada item yang kurang dari buyQty
-        local needBuy = false
-        for _, name in ipairs(buyItems) do
-            if countItem(name) < buyQty then
-                needBuy = true
-                break
-            end
-        end
-        if not needBuy then continue end
-
-        buyRunning = true
-
-        -- Teleport ke NPC toko SEKALI
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then buyRunning = false; continue end
-        hrp.CFrame = CFrame.new(buyCoords.x, buyCoords.y + 3, buyCoords.z)
-        task.wait(1) -- tunggu load area
-
-        -- Beli semua item yang kurang, tiap item pakai jeda wajar
-        for _, name in ipairs(buyItems) do
-            if not autoBuy then break end
-            local needed = buyQty - countItem(name)
-            if needed <= 0 then continue end
-
-            Notify('🛒 Beli ' .. needed .. 'x ' .. name, 2)
-            for i = 1, needed do
-                if not autoBuy then break end
-                local prompt = findNPCPrompt(10)
-                if prompt then
-                    fireproximityprompt(prompt)
-                end
-                task.wait(0.8) -- jeda antar beli, cukup untuk server proses
-            end
-            task.wait(0.5) -- jeda antar item berbeda
-        end
-
-        Notify('✅ Auto Buy selesai!', 2)
-        buyRunning = false
-        task.wait(5) -- cooldown sebelum cek lagi
-    end
-end)
-
--- Auto Sell loop
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if not autoSell or sellRunning then continue end
-
-        local msCount = countItem("Marshmallow") + countItem("Marshmellow")
-        if msCount == 0 then task.wait(2); continue end
-
-        sellRunning = true
-
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then sellRunning = false; continue end
-
-        hrp.CFrame = CFrame.new(sellCoords.x, sellCoords.y + 3, sellCoords.z)
-        task.wait(0.8)
-
-        selectItem("Marshmallow")
-        selectItem("Marshmellow")
-        task.wait(0.3)
-
-        local prompt = findNPCPrompt(10)
-        if prompt then
-            firePrompt(prompt)
-            Notify('💰 Auto Sell: MS terjual!', 2)
-        else
-            Notify('💰 Auto Sell: NPC tidak ditemukan', 2)
-        end
-
-        sellRunning = false
-        task.wait(3)
-    end
-end)
-
-LeftBuy:AddToggle('AutoBuyToggle', {
-    Text    = '🛒 Auto Buy Bahan',
-    Default = false,
-    Tooltip = 'Beli bahan otomatis sesuai jumlah slider',
-    Callback = function(v)
-        autoBuy = v
-        Notify('🛒 Auto Buy ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
-    end
-})
-
-LeftBuy:AddToggle('AutoSellToggle', {
-    Text    = '💰 Auto Sell Marshmellow',
-    Default = false,
-    Tooltip = 'Jual marshmellow otomatis ke NPC',
-    Callback = function(v)
-        autoSell = v
-        Notify('💰 Auto Sell ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
-    end
-})
 
 -- ════════════════════════════════════════════════════════
 --  TELEPORT TAB
 -- ════════════════════════════════════════════════════════
-local LeftTP  = Tabs.Teleport:AddLeftGroupbox('📍 Teleport')
-local RightTP = Tabs.Teleport:AddRightGroupbox('ℹ️ Info')
-
-RightTP:AddLabel('Flow:', true)
-RightTP:AddLabel('1. Karakter di-kill', true)
-RightTP:AddLabel('2. Tunggu respawn', true)
-RightTP:AddLabel('3. Langsung TP tujuan', true)
+makeSection(pageTeleport, "📍 Teleport")
 
 local tpDestination = nil
 local tpPending     = false
@@ -460,7 +583,6 @@ local function onCharacterAdded(char)
         if not hrp or not hum then return end
         task.wait(1)
         hrp.CFrame = CFrame.new(tpDestination.x, tpDestination.y + 3, tpDestination.z)
-        Notify('📍 Tiba di ' .. tpDestination.label .. '!', 3)
         tpDestination = nil
     end)
 end
@@ -468,40 +590,31 @@ end
 if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
-local function killAndTP(x, y, z, label)
+local function killAndTP(x, y, z)
     task.spawn(function()
         local char = LocalPlayer.Character
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        tpDestination = {x=x, y=y, z=z, label=label}
+        tpDestination = {x=x, y=y, z=z}
         tpPending = true
-        if not char or not hum or hum.Health <= 0 then
-            Notify('⏳ Menunggu respawn...', 2)
-        else
-            Notify('💀 Respawn dulu...', 2)
-            hum.Health = 0
-        end
+        if char and hum and hum.Health > 0 then hum.Health = 0 end
     end)
 end
 
-LeftTP:AddButton({
-    Text = '🚗  Dealership',
-    Func = function()
-        killAndTP(732.1171264648438, 3.3621320724487305, 406.0807189941406, 'Dealership')
-    end,
-})
+makeButton(pageTeleport, "🚗  Dealership", Color3.fromRGB(0, 110, 220), 2, function()
+    killAndTP(732.1171264648438, 3.3621320724487305, 406.0807189941406)
+end)
 
-LeftTP:AddButton({
-    Text = '🍡  Jual/Beli Marshmellow',
-    Func = function()
-        killAndTP(510.9961853027344, 3.5872106552124023, 598.3929443359375, 'Jual/Beli MS')
-    end,
-})
+makeButton(pageTeleport, "🍡  Jual/Beli Marshmellow", Color3.fromRGB(180, 80, 0), 3, function()
+    killAndTP(510.9961853027344, 3.5872106552124023, 598.3929443359375)
+end)
+
+makeSection(pageTeleport, "ℹ️ Info")
+makeLabel(pageTeleport, "Kill → Respawn → TP ke tujuan", Color3.fromRGB(140, 140, 160), 4)
 
 -- ════════════════════════════════════════════════════════
---  ESP TAB
+--  ESP TAB — BillboardGui
 -- ════════════════════════════════════════════════════════
-local LeftESP  = Tabs.ESP:AddLeftGroupbox('👁️ Player ESP')
-local RightESP = Tabs.ESP:AddRightGroupbox('🎨 Warna')
+makeSection(pageESP, "👁️ Player ESP")
 
 local espEnabled = false
 local espColor   = Color3.fromRGB(0, 200, 255)
@@ -510,8 +623,8 @@ espFolder.Name   = "KINGESPFolder"
 espFolder.Parent = Workspace
 
 local function removeESP(player)
-    local existing = espFolder:FindFirstChild("ESP_"..player.Name)
-    if existing then existing:Destroy() end
+    local f = espFolder:FindFirstChild("ESP_"..player.Name)
+    if f then f:Destroy() end
     if player.Character then
         local hrp = player.Character:FindFirstChild("HumanoidRootPart")
         if hrp then
@@ -537,14 +650,10 @@ local function createESPBillboard(player)
     bb.Adornee = hrp; bb.Parent = hrp
 
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1,0,1,0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = player.Name
-    nameLabel.TextColor3 = espColor
-    nameLabel.TextStrokeTransparency = 0
-    nameLabel.TextStrokeColor3 = Color3.new(0,0,0)
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextSize = 14
+    nameLabel.Size = UDim2.new(1,0,1,0); nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = player.Name; nameLabel.TextColor3 = espColor
+    nameLabel.TextStrokeTransparency = 0; nameLabel.TextStrokeColor3 = Color3.new(0,0,0)
+    nameLabel.Font = Enum.Font.GothamBold; nameLabel.TextSize = 14
     nameLabel.Parent = bb
 
     local selBox = Instance.new("SelectionBox")
@@ -558,10 +667,8 @@ local function createESPBillboard(player)
             local alive = espEnabled and char.Parent ~= nil
                 and char:FindFirstChildOfClass("Humanoid") ~= nil
                 and char:FindFirstChildOfClass("Humanoid").Health > 0
-            bb.Enabled = alive
-            selBox.Adornee = alive and char or nil
-            nameLabel.TextColor3 = espColor
-            selBox.Color3 = espColor
+            bb.Enabled = alive; selBox.Adornee = alive and char or nil
+            nameLabel.TextColor3 = espColor; selBox.Color3 = espColor
         end
     end)
 
@@ -571,134 +678,40 @@ local function createESPBillboard(player)
     end)
 end
 
-LeftESP:AddToggle('ESPToggle', {
-    Text    = 'ESP Box + Nama Player',
-    Default = false,
-    Callback = function(v)
-        espEnabled = v
-        if v then
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer then task.spawn(createESPBillboard, plr) end
-            end
-            Players.PlayerAdded:Connect(function(plr)
-                if espEnabled and plr ~= LocalPlayer then task.spawn(createESPBillboard, plr) end
-            end)
-            Players.PlayerRemoving:Connect(removeESP)
-        else
-            for _, obj in ipairs(espFolder:GetChildren()) do obj:Destroy() end
-            for _, plr in pairs(Players:GetPlayers()) do removeESP(plr) end
+makeToggle(pageESP, "ESP Box + Nama Player", false, 2, function(v)
+    espEnabled = v
+    if v then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then task.spawn(createESPBillboard, plr) end
         end
-        Notify('👁️ ESP ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
+        Players.PlayerAdded:Connect(function(plr)
+            if espEnabled and plr ~= LocalPlayer then task.spawn(createESPBillboard, plr) end
+        end)
+        Players.PlayerRemoving:Connect(removeESP)
+    else
+        for _, obj in ipairs(espFolder:GetChildren()) do obj:Destroy() end
+        for _, plr in pairs(Players:GetPlayers()) do removeESP(plr) end
     end
-})
+end)
 
-local espColors = {
+makeSection(pageESP, "🎨 Warna ESP")
+
+local espColorMap = {
     ["🔵 Biru"]   = Color3.fromRGB(0, 180, 255),
     ["🔴 Merah"]  = Color3.fromRGB(255, 50, 50),
     ["🟢 Hijau"]  = Color3.fromRGB(0, 255, 100),
     ["🟡 Kuning"] = Color3.fromRGB(255, 220, 0),
     ["⚪ Putih"]  = Color3.fromRGB(255, 255, 255),
 }
-local colorOptions = {}
-for k in pairs(espColors) do table.insert(colorOptions, k) end
-table.sort(colorOptions)
-
-RightESP:AddDropdown('ESPColorDropdown', {
-    Values = colorOptions, Default = 1, Text = 'Warna ESP',
-    Callback = function(v) espColor = espColors[v] end
-})
+makeDropdown(pageESP, "Warna Box", {"🔵 Biru","🔴 Merah","🟢 Hijau","🟡 Kuning","⚪ Putih"}, 5, function(v)
+    espColor = espColorMap[v] or Color3.fromRGB(0, 180, 255)
+end)
 
 -- ════════════════════════════════════════════════════════
 --  SETTINGS TAB
 -- ════════════════════════════════════════════════════════
-local LeftSettings  = Tabs.Settings:AddLeftGroupbox('🎛️ UI Control')
-local RightSettings = Tabs.Settings:AddRightGroupbox('ℹ️ Info')
-
-RightSettings:AddLabel('KING MJS FREE', true)
-RightSettings:AddLabel('v1.7 | Mobile + PC', true)
-RightSettings:AddLabel('by qie and arul', true)
-
-local uiVisible      = true
-local listeningBind  = false
-local currentBind    = Enum.KeyCode.RightShift
-local bindLabel
-
-local function getMainGui()
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then return nil end
-    for _, gui in ipairs(pg:GetChildren()) do
-        if gui:IsA("ScreenGui") and (gui.Name:lower():find("linoria") or gui.Name:lower():find("library")) then
-            return gui
-        end
-    end
-    return nil
-end
-
-local function toggleUI()
-    local gui = getMainGui()
-    if not gui then return end
-    uiVisible = not uiVisible
-    gui.Enabled = uiVisible
-end
-
--- Tombol manual
-LeftSettings:AddButton({
-    Text = '🙈 Sembunyikan UI',
-    Func = function()
-        local gui = getMainGui()
-        if gui then uiVisible = false; gui.Enabled = false end
-    end,
-})
-
-LeftSettings:AddButton({
-    Text = '👁️ Tampilkan UI',
-    Func = function()
-        local gui = getMainGui()
-        if gui then uiVisible = true; gui.Enabled = true end
-    end,
-})
-
--- Custom keybind
-bindLabel = LeftSettings:AddLabel('Keybind: RightShift', true)
-
-LeftSettings:AddButton({
-    Text = '🎮 Set Keybind',
-    Func = function()
-        listeningBind = true
-        bindLabel:SetText('Tekan tombol...')
-        Notify('🎮 Tekan tombol yang kamu mau!', 3)
-    end,
-    Tooltip = 'Klik lalu tekan tombol untuk set keybind'
-})
-
--- Pakai InputEnded agar tidak konflik dengan game
--- Dan ignore gameProcessed sama sekali karena game ini selalu true
-UIS.InputEnded:Connect(function(input)
-    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-
-    if listeningBind then
-        -- Abaikan tombol sistem
-        local ignore = {
-            Enum.KeyCode.Unknown,
-            Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift,
-            Enum.KeyCode.LeftControl, Enum.KeyCode.RightControl,
-            Enum.KeyCode.LeftAlt, Enum.KeyCode.RightAlt,
-            Enum.KeyCode.CapsLock, Enum.KeyCode.Tab,
-        }
-        for _, k in ipairs(ignore) do
-            if input.KeyCode == k then return end
-        end
-        currentBind = input.KeyCode
-        bindLabel:SetText('Keybind: ' .. input.KeyCode.Name)
-        listeningBind = false
-        Notify('✅ Keybind: ' .. input.KeyCode.Name, 2)
-        return
-    end
-
-    if input.KeyCode == currentBind then
-        toggleUI()
-    end
-end)
-
-Library:SetWatermark('KING MJS FREE  |  v1.7')
-Library:SetWatermarkVisibility(true)
+makeSection(pageSettings, "⚙️ Info")
+makeLabel(pageSettings, "KING MJS FREE v2.0",          Color3.fromRGB(0, 200, 255), 2)
+makeLabel(pageSettings, "by qie and arul",             Color3.fromRGB(180, 180, 200), 3)
+makeLabel(pageSettings, "K = Minimize / Maximize",     Color3.fromRGB(255, 210, 50), 4)
+makeLabel(pageSettings, "Drag header untuk pindahkan", Color3.fromRGB(160, 160, 180), 5)
