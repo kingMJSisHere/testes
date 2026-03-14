@@ -333,10 +333,10 @@ local sellCoords = {x = 510.9961853027344, y = 3.5872106552124023, z = 598.39294
 -- Items yang dibeli: nama item → jumlah yg mau dibeli
 local buyItems = {"Water", "Gelatin", "Sugar Block Bag", "Empty Bag"}
 
--- Auto Buy loop
+-- Auto Buy loop — fix anti freeze
 task.spawn(function()
     while true do
-        task.wait(0.5)
+        task.wait(2) -- jeda lebih panjang antar cek
         if not autoBuy or buyRunning then continue end
 
         -- Cek apakah ada item yang kurang dari buyQty
@@ -347,19 +347,20 @@ task.spawn(function()
                 break
             end
         end
-        if not needBuy then task.wait(2); continue end
+        if not needBuy then continue end
 
         buyRunning = true
 
-        -- Teleport ke NPC toko
+        -- Teleport ke NPC toko SEKALI
         local char = LocalPlayer.Character
         local hrp  = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then buyRunning = false; continue end
         hrp.CFrame = CFrame.new(buyCoords.x, buyCoords.y + 3, buyCoords.z)
-        task.wait(0.8)
+        task.wait(1) -- tunggu load area
 
-        -- Interact NPC sampai semua item terpenuhi
+        -- Beli semua item yang kurang, tiap item pakai jeda wajar
         for _, name in ipairs(buyItems) do
+            if not autoBuy then break end
             local needed = buyQty - countItem(name)
             if needed <= 0 then continue end
 
@@ -368,15 +369,16 @@ task.spawn(function()
                 if not autoBuy then break end
                 local prompt = findNPCPrompt(10)
                 if prompt then
-                    firePrompt(prompt)
-                    task.wait(0.5)
+                    fireproximityprompt(prompt)
                 end
+                task.wait(0.8) -- jeda antar beli, cukup untuk server proses
             end
+            task.wait(0.5) -- jeda antar item berbeda
         end
 
         Notify('✅ Auto Buy selesai!', 2)
         buyRunning = false
-        task.wait(3)
+        task.wait(5) -- cooldown sebelum cek lagi
     end
 end)
 
@@ -614,10 +616,11 @@ local RightSettings = Tabs.Settings:AddRightGroupbox('ℹ️ Info')
 
 RightSettings:AddLabel('KING MJS FREE', true)
 RightSettings:AddLabel('v1.7 | Mobile + PC', true)
-RightSettings:AddLabel('by majestyAllXyzZz', true)
+RightSettings:AddLabel('by qie and arul', true)
 
 local currentKeybind = Enum.KeyCode.RightShift
 local listeningMode  = false
+local uiVisible      = true
 local keybindLabel   = LeftSettings:AddLabel('Keybind saat ini: RightShift', true)
 
 LeftSettings:AddButton({
@@ -633,10 +636,39 @@ LeftSettings:AddLabel('• Klik tombol di atas', true)
 LeftSettings:AddLabel('• Lalu tekan key pilihan', true)
 LeftSettings:AddLabel('• Default: RightShift', true)
 
--- Fix keybind: pakai flag terpisah, cek di InputBegan
-local inputConn
-inputConn = UIS.InputBegan:Connect(function(input, gp)
-    -- Jangan proses jika game sudah handle input ini
+-- Cari GUI Linoria untuk toggle visibility
+local function getLinoriaGui()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    -- Linoria biasanya pakai nama "LinoriaLib" atau "Linoria"
+    for _, gui in ipairs(pg:GetChildren()) do
+        if gui:IsA("ScreenGui") and (gui.Name:find("Linoria") or gui.Name:find("Library")) then
+            return gui
+        end
+    end
+    return nil
+end
+
+local function toggleUI()
+    uiVisible = not uiVisible
+    local gui = getLinoriaGui()
+    if gui then
+        gui.Enabled = uiVisible
+    else
+        -- Fallback: sembunyikan semua ScreenGui milik script
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, g in ipairs(pg:GetChildren()) do
+                if g:IsA("ScreenGui") and g.ResetOnSpawn == false then
+                    g.Enabled = uiVisible
+                end
+            end
+        end
+    end
+    Notify(uiVisible and '👁️ UI Ditampilkan' or '🙈 UI Disembunyikan', 1)
+end
+
+UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
 
     if listeningMode then
@@ -646,13 +678,12 @@ inputConn = UIS.InputBegan:Connect(function(input, gp)
             listeningMode = false
             Notify('✅ Keybind diset ke: ' .. input.KeyCode.Name, 3)
         end
-        return -- jangan lanjut ke toggle
+        return
     end
 
-    -- Toggle UI
     if input.UserInputType == Enum.UserInputType.Keyboard
         and input.KeyCode == currentKeybind then
-        Library:ToggleUI()
+        toggleUI()
     end
 end)
 
