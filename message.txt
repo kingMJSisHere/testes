@@ -512,10 +512,37 @@ makeToggle(pageAuto, "Auto-Farm Marshmallows", false, 5, function(v)
 end)
 
 -- Auto farm logic persis original
+-- pressE: auto detect PC vs Mobile
 local function pressE()
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    -- Coba VirtualInputManager (PC/executor yang support)
+    local ok = pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end)
+    if not ok then
+        -- Fallback mobile: fireproximityprompt
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        local myPos = char.HumanoidRootPart.Position
+        local closest, closestDist = nil, math.huge
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") and obj.Enabled then
+                local part = obj.Parent
+                if part and part:IsA("BasePart") then
+                    local dist = (part.Position - myPos).Magnitude
+                    if dist < 15 and dist < closestDist then
+                        closestDist = dist
+                        closest = obj
+                    end
+                end
+            end
+        end
+        if closest then
+            fireproximityprompt(closest)
+        end
+    end
     task.wait(0.25)
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
 local function hasInstruction(text)
@@ -713,5 +740,38 @@ end)
 makeSection(pageSettings, "⚙️ Info")
 makeLabel(pageSettings, "KING MJS FREE v2.0",          Color3.fromRGB(0, 200, 255), 2)
 makeLabel(pageSettings, "by qie and arul",             Color3.fromRGB(180, 180, 200), 3)
-makeLabel(pageSettings, "K = Minimize / Maximize",     Color3.fromRGB(255, 210, 50), 4)
-makeLabel(pageSettings, "Drag header untuk pindahkan", Color3.fromRGB(160, 160, 180), 5)
+makeLabel(pageSettings, "K = Minimize (PC)",           Color3.fromRGB(255, 210, 50), 4)
+makeLabel(pageSettings, "Tombol 👁️ = Hide/Show (HP)",  Color3.fromRGB(0, 220, 120), 5)
+makeLabel(pageSettings, "Drag header untuk pindahkan", Color3.fromRGB(160, 160, 180), 6)
+
+-- ════════════════════════════════════════════════════════
+--  TOMBOL HIDE/SHOW UI — untuk mobile (pojok kanan bawah)
+-- ════════════════════════════════════════════════════════
+local mobileSg = Instance.new("ScreenGui")
+mobileSg.Name = "KINGMobileBtn"
+mobileSg.ResetOnSpawn = false
+mobileSg.ZIndexBehavior = Enum.ZIndexBehavior.Global
+mobileSg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local mobileBtn = Instance.new("TextButton")
+mobileBtn.Size = UDim2.new(0, 48, 0, 48)
+mobileBtn.Position = UDim2.new(1, -60, 1, -70)
+mobileBtn.BackgroundColor3 = Color3.fromRGB(0, 90, 200)
+mobileBtn.Text = "👁️"
+mobileBtn.TextSize = 22
+mobileBtn.Font = Enum.Font.GothamBold
+mobileBtn.TextColor3 = Color3.new(1,1,1)
+mobileBtn.BorderSizePixel = 0
+mobileBtn.ZIndex = 999
+mobileBtn.Parent = mobileSg
+Instance.new("UICorner", mobileBtn).CornerRadius = UDim.new(1, 0)
+
+local mobileStroke = Instance.new("UIStroke")
+mobileStroke.Color = Color3.fromRGB(0, 150, 255)
+mobileStroke.Thickness = 2
+mobileStroke.Parent = mobileBtn
+
+mobileBtn.MouseButton1Click:Connect(function()
+    toggleMinimize()
+    mobileBtn.Text = isMinimized and "🔲" or "👁️"
+end)
