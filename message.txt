@@ -330,8 +330,8 @@ LeftBuy:AddSlider('BuyQtySlider', {
 local buyCoords  = {x = 510.9961853027344, y = 3.5872106552124023, z = 598.3929443359375}
 local sellCoords = {x = 510.9961853027344, y = 3.5872106552124023, z = 598.3929443359375}
 
--- Items yang dibeli: nama item → jumlah yg mau dibeli
-local buyItems = {"Water", "Gelatin", "Sugar Block Bag", "Empty Bag"}
+-- Items yang dibeli: nama item sesuai nama di game
+local buyItems = {"Air", "Gelatin", "Tas Blok Gula"}
 
 -- Auto Buy loop — fix anti freeze
 task.spawn(function()
@@ -609,40 +609,25 @@ RightESP:AddDropdown('ESPColorDropdown', {
 })
 
 -- ════════════════════════════════════════════════════════
---  SETTINGS TAB — Keybind fix
+--  SETTINGS TAB
 -- ════════════════════════════════════════════════════════
-local LeftSettings  = Tabs.Settings:AddLeftGroupbox('⌨️ Keybind UI')
+local LeftSettings  = Tabs.Settings:AddLeftGroupbox('🎛️ UI Control')
 local RightSettings = Tabs.Settings:AddRightGroupbox('ℹ️ Info')
 
 RightSettings:AddLabel('KING MJS FREE', true)
 RightSettings:AddLabel('v1.7 | Mobile + PC', true)
 RightSettings:AddLabel('by qie and arul', true)
 
-local currentKeybind = Enum.KeyCode.RightShift
-local listeningMode  = false
 local uiVisible      = true
-local keybindLabel   = LeftSettings:AddLabel('Keybind saat ini: RightShift', true)
+local listeningBind  = false
+local currentBind    = Enum.KeyCode.RightShift
+local bindLabel
 
-LeftSettings:AddButton({
-    Text = '🎮 Atur Keybind Hide/Show UI',
-    Func = function()
-        listeningMode = true
-        keybindLabel:SetText('Tekan tombol sekarang...')
-        Notify('🎮 Tekan tombol yang kamu mau!', 3)
-    end,
-})
-
-LeftSettings:AddLabel('• Klik tombol di atas', true)
-LeftSettings:AddLabel('• Lalu tekan key pilihan', true)
-LeftSettings:AddLabel('• Default: RightShift', true)
-
--- Cari GUI Linoria untuk toggle visibility
-local function getLinoriaGui()
+local function getMainGui()
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     if not pg then return nil end
-    -- Linoria biasanya pakai nama "LinoriaLib" atau "Linoria"
     for _, gui in ipairs(pg:GetChildren()) do
-        if gui:IsA("ScreenGui") and (gui.Name:find("Linoria") or gui.Name:find("Library")) then
+        if gui:IsA("ScreenGui") and (gui.Name:lower():find("linoria") or gui.Name:lower():find("library")) then
             return gui
         end
     end
@@ -650,39 +635,67 @@ local function getLinoriaGui()
 end
 
 local function toggleUI()
+    local gui = getMainGui()
+    if not gui then return end
     uiVisible = not uiVisible
-    local gui = getLinoriaGui()
-    if gui then
-        gui.Enabled = uiVisible
-    else
-        -- Fallback: sembunyikan semua ScreenGui milik script
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            for _, g in ipairs(pg:GetChildren()) do
-                if g:IsA("ScreenGui") and g.ResetOnSpawn == false then
-                    g.Enabled = uiVisible
-                end
-            end
-        end
-    end
-    Notify(uiVisible and '👁️ UI Ditampilkan' or '🙈 UI Disembunyikan', 1)
+    gui.Enabled = uiVisible
 end
 
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
+-- Tombol manual
+LeftSettings:AddButton({
+    Text = '🙈 Sembunyikan UI',
+    Func = function()
+        local gui = getMainGui()
+        if gui then uiVisible = false; gui.Enabled = false end
+    end,
+})
 
-    if listeningMode then
-        if input.UserInputType == Enum.UserInputType.Keyboard then
-            currentKeybind = input.KeyCode
-            keybindLabel:SetText('Keybind saat ini: ' .. input.KeyCode.Name)
-            listeningMode = false
-            Notify('✅ Keybind diset ke: ' .. input.KeyCode.Name, 3)
+LeftSettings:AddButton({
+    Text = '👁️ Tampilkan UI',
+    Func = function()
+        local gui = getMainGui()
+        if gui then uiVisible = true; gui.Enabled = true end
+    end,
+})
+
+-- Custom keybind
+bindLabel = LeftSettings:AddLabel('Keybind: RightShift', true)
+
+LeftSettings:AddButton({
+    Text = '🎮 Set Keybind',
+    Func = function()
+        listeningBind = true
+        bindLabel:SetText('Tekan tombol...')
+        Notify('🎮 Tekan tombol yang kamu mau!', 3)
+    end,
+    Tooltip = 'Klik lalu tekan tombol untuk set keybind'
+})
+
+-- Pakai InputEnded agar tidak konflik dengan game
+-- Dan ignore gameProcessed sama sekali karena game ini selalu true
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+    if listeningBind then
+        -- Abaikan tombol sistem
+        local ignore = {
+            Enum.KeyCode.Unknown,
+            Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift,
+            Enum.KeyCode.LeftControl, Enum.KeyCode.RightControl,
+            Enum.KeyCode.LeftAlt, Enum.KeyCode.RightAlt,
+            Enum.KeyCode.CapsLock, Enum.KeyCode.Tab,
+        }
+        for _, k in ipairs(ignore) do
+            if input.KeyCode == k then return end
         end
+        currentBind = input.KeyCode
+        bindLabel:SetText('Keybind: ' .. input.KeyCode.Name)
+        listeningBind = false
+        Notify('✅ Keybind: ' .. input.KeyCode.Name, 2)
         return
     end
 
-    if input.UserInputType == Enum.UserInputType.Keyboard
-        and input.KeyCode == currentKeybind then
+    if input.KeyCode == currentBind then
         toggleUI()
     end
 end)
