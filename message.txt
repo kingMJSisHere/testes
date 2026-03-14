@@ -1,68 +1,46 @@
--- // KING MJS FREE | Mobile Version
--- // Compatible: Arceus X, Delta, Hydrogen
--- // Interact: FireProximityPrompt (support mobile)
+-- // KING MJS FREE | v1.2
+-- // Fix: Anti-freeze auto farm | ESP added | Mobile+PC
 
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
-local Library     = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
-local Players      = game:GetService("Players")
-local LocalPlayer  = Players.LocalPlayer
-local RunService   = game:GetService("RunService")
-local Workspace    = game:GetService("Workspace")
-local Camera       = Workspace.CurrentCamera
+local Players     = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService  = game:GetService("RunService")
+local Workspace   = game:GetService("Workspace")
+local UIS         = game:GetService("UserInputService")
+local Camera      = Workspace.CurrentCamera
 
 local Window = Library:CreateWindow({
-    Title      = 'KING MJS FREE  |  v1.0 Mobile',
-    Center     = true,
-    AutoShow   = true,
-    TabPadding = 8,
+    Title        = 'KING MJS FREE  |  v1.2',
+    Center       = true,
+    AutoShow     = true,
+    TabPadding   = 8,
     MenuFadeTime = 0.2
 })
+
+-- Keybind hide/show UI (RightShift PC)
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        Library:ToggleUI()
+    end
+end)
 
 local Tabs = {
     Main     = Window:AddTab('Main'),
     AutoFarm = Window:AddTab('Auto Farm'),
     Teleport = Window:AddTab('Teleport'),
-    Settings = Window:AddTab('Settings'),
+    ESP      = Window:AddTab('ESP'),
 }
 
-local function Notify(title, desc, dur)
-    Library:Notify(title .. '\n' .. desc, dur or 3)
+local function Notify(msg, dur)
+    Library:Notify(msg, dur or 3)
 end
 
--- ════════════════════════════════════════════════════════
---  HELPER: FireProximityPrompt (ganti VirtualInputManager)
--- ════════════════════════════════════════════════════════
-local function findNearestPrompt()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = char.HumanoidRootPart.Position
-    local closest, closestDist = nil, math.huge
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Enabled then
-            local part = obj.Parent
-            if part and part:IsA("BasePart") then
-                local dist = (part.Position - myPos).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closest = obj
-                end
-            end
-        end
-    end
-    return closest
-end
-
-local function pressE()
-    -- Mobile-friendly: FireProximityPrompt
-    local prompt = findNearestPrompt()
-    if prompt then
-        fireproximityprompt(prompt)
-        task.wait(0.3)
-    end
-end
+Notify('👑 KING MJS FREE v1.2\n[RightShift] = Hide/Show UI', 4)
 
 -- ════════════════════════════════════════════════════════
 --  MAIN TAB
@@ -86,6 +64,13 @@ for _, name in ipairs(itemNames) do
     invLabels[name] = LeftMain:AddLabel(name .. '  :  0', true)
 end
 
+local timeElapsed      = 0
+local marshmallowCount = 0
+local autoFarmRunning  = false
+
+local timeLabel = RightMain:AddLabel('Time  :  0h 0m 0s', true)
+local msLabel   = RightMain:AddLabel('MS    :  0  ($0)', true)
+
 task.spawn(function()
     while true do
         task.wait(1)
@@ -94,20 +79,6 @@ task.spawn(function()
                 invLabels[name]:SetText(name .. '  :  ' .. countItem(name))
             end
         end
-    end
-end)
-
-local timeElapsed      = 0
-local marshmallowCount = 0
-local autoFarmRunning  = false
-
-local timeLabel  = RightMain:AddLabel('Time  :  0h 0m 0s', true)
-local msLabel    = RightMain:AddLabel('MS    :  0  ($0)', true)
-local moneyLabel = RightMain:AddLabel('Money :  + $0', true)
-
-task.spawn(function()
-    while true do
-        task.wait(1)
         if autoFarmRunning then
             timeElapsed += 1
             local h = math.floor(timeElapsed/3600)
@@ -115,21 +86,20 @@ task.spawn(function()
             local s = timeElapsed % 60
             timeLabel:SetText('Time  :  '..h..'h '..m..'m '..s..'s')
             msLabel:SetText('MS    :  '..marshmallowCount..'  ($'..(marshmallowCount*950)..')')
-            moneyLabel:SetText('Money :  + $'..(marshmallowCount*950))
         end
     end
 end)
 
 -- ════════════════════════════════════════════════════════
 --  AUTO FARM TAB
+--  FIX FREEZE: cache instruction check, pakai task.spawn
 -- ════════════════════════════════════════════════════════
-local LeftAuto  = Tabs.AutoFarm:AddLeftGroupbox('⚙️ Auto Marshmellow')
+local LeftAuto  = Tabs.AutoFarm:AddLeftGroupbox('⚙️ Auto MS')
 local RightAuto = Tabs.AutoFarm:AddRightGroupbox('📋 Status')
 
 local autoFarm     = false
 local currentStep  = 1
 local stepCooldown = 0
-local lastCheck    = 0
 
 local phaseNames = {
     [1] = "💧 Water",
@@ -142,15 +112,63 @@ local phaseLabel  = RightAuto:AddLabel('Phase   :  Idle', true)
 local stepLabel   = RightAuto:AddLabel('Step    :  1 / 4', true)
 local statusLabel = RightAuto:AddLabel('Status  :  OFF', true)
 
-local function hasInstruction(text)
+-- Cache instruction text agar tidak loop berat tiap frame
+local cachedInstructions = {}
+local instrUpdateTime = 0
+
+local function updateInstructionCache()
+    cachedInstructions = {}
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then return false end
+    if not pg then return end
     for _, ui in ipairs(pg:GetDescendants()) do
-        if (ui:IsA("TextLabel") or ui:IsA("TextButton")) and ui.Text and ui.Text:find(text) then
-            return true
+        if (ui:IsA("TextLabel") or ui:IsA("TextButton")) and ui.Text and #ui.Text > 0 then
+            cachedInstructions[#cachedInstructions+1] = ui.Text
         end
     end
+end
+
+-- Update cache tiap 0.5 detik di thread terpisah (anti freeze)
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if autoFarm then
+            updateInstructionCache()
+        end
+    end
+end)
+
+local function hasInstruction(text)
+    for _, t in ipairs(cachedInstructions) do
+        if t:find(text) then return true end
+    end
     return false
+end
+
+local function findNearestPrompt()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = char.HumanoidRootPart.Position
+    local closest, closestDist = nil, math.huge
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled then
+            local part = obj.Parent
+            if part and part:IsA("BasePart") then
+                local dist = (part.Position - myPos).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closest = obj
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function pressE()
+    local prompt = findNearestPrompt()
+    if prompt then
+        fireproximityprompt(prompt)
+    end
 end
 
 local function selectItem(itemName)
@@ -165,157 +183,217 @@ local function selectItem(itemName)
     return false
 end
 
--- Teleport ke ProximityPrompt terdekat lalu interact
-local function tpAndInteract(x, y, z)
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFrame.new(x, y + 3, z)
-        task.wait(0.5)
-        pressE()
-    end
-end
+-- Auto farm loop di task.spawn terpisah (BUKAN Heartbeat) — anti freeze
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        if not autoFarm then continue end
+        if stepCooldown > 0 then
+            stepCooldown = stepCooldown - 0.3
+            continue
+        end
 
-RunService.Heartbeat:Connect(function(dt)
-    if not autoFarm then return end
-    stepCooldown = math.max(0, stepCooldown - dt)
-    if stepCooldown > 0 then return end
-    lastCheck = lastCheck + dt
-    if lastCheck < 0.3 then return end
-    lastCheck = 0
+        phaseLabel:SetText('Phase   :  ' .. (phaseNames[currentStep] or 'Idle'))
+        stepLabel:SetText('Step    :  ' .. currentStep .. ' / 4')
 
-    phaseLabel:SetText('Phase   :  ' .. (phaseNames[currentStep] or 'Idle'))
-    stepLabel:SetText('Step    :  ' .. currentStep .. ' / 4')
-
-    if currentStep == 1 and selectItem("Water") then
-        pressE(); currentStep = 2; stepCooldown = 1.5
-    elseif currentStep == 2 and hasInstruction("Dump the sugar block") and selectItem("Sugar Block Bag") then
-        pressE(); currentStep = 3; stepCooldown = 1.5
-    elseif currentStep == 3 and hasInstruction("Pour gelatin") and selectItem("Gelatin") then
-        pressE(); currentStep = 4; stepCooldown = 1.5
-    elseif currentStep == 4 and hasInstruction("Bag the solution into the empty") and selectItem("Empty Bag") then
-        pressE(); marshmallowCount += 1; currentStep = 1; stepCooldown = 1.5
-    elseif hasInstruction("You must hold out a bottle of water") then
-        currentStep = 1; stepCooldown = 1
+        if currentStep == 1 and selectItem("Water") then
+            pressE(); currentStep = 2; stepCooldown = 1.5
+        elseif currentStep == 2 and hasInstruction("Dump the sugar block") and selectItem("Sugar Block Bag") then
+            pressE(); currentStep = 3; stepCooldown = 1.5
+        elseif currentStep == 3 and hasInstruction("Pour gelatin") and selectItem("Gelatin") then
+            pressE(); currentStep = 4; stepCooldown = 1.5
+        elseif currentStep == 4 and hasInstruction("Bag the solution into the empty") and selectItem("Empty Bag") then
+            pressE(); marshmallowCount += 1; currentStep = 1; stepCooldown = 1.5
+        elseif hasInstruction("You must hold out a bottle of water") then
+            currentStep = 1; stepCooldown = 1
+        end
     end
 end)
 
 LeftAuto:AddToggle('AutoFarmToggle', {
     Text    = 'Auto-Farm Marshmallows',
     Default = false,
-    Tooltip = 'Aktifkan auto marshmellow (mobile)',
     Callback = function(v)
-        autoFarm      = v
+        autoFarm        = v
         autoFarmRunning = v
-        currentStep   = 1
+        currentStep     = 1
+        stepCooldown    = 0
         statusLabel:SetText('Status  :  ' .. (v and 'ON' or 'OFF'))
         if not v then
             phaseLabel:SetText('Phase   :  Idle')
             stepLabel:SetText('Step    :  1 / 4')
         end
-        Notify('⚙️ Auto Farm', v and 'ENABLED' or 'DISABLED', 3)
+        Notify('⚙️ Auto Farm ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
     end
-})
-
-LeftAuto:AddButton({
-    Text    = '👆 Manual Interact (E)',
-    Func    = function()
-        pressE()
-        Notify('👆 Interact', 'ProximityPrompt fired!', 2)
-    end,
-    Tooltip = 'Tekan tombol ini untuk manual interact'
 })
 
 -- ════════════════════════════════════════════════════════
 --  TELEPORT TAB
 -- ════════════════════════════════════════════════════════
-local LeftTP  = Tabs.Teleport:AddLeftGroupbox('🏪 Lokasi')
-local RightTP = Tabs.Teleport:AddRightGroupbox('🍡 Marshmellow')
+local LeftTP  = Tabs.Teleport:AddLeftGroupbox('📍 Teleport')
+local RightTP = Tabs.Teleport:AddRightGroupbox('ℹ️ Info')
 
-local function tpTo(x, y, z)
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFrame.new(x, y + 3, z)
-        Notify('📍 Teleport', 'Berhasil!', 2)
-    end
+RightTP:AddLabel('• TP ke tujuan', true)
+RightTP:AddLabel('• Notify saat tiba', true)
+RightTP:AddLabel('• Otomatis balik', true)
+
+local function safeTP(x, y, z, label)
+    task.spawn(function()
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+
+        -- Tunggu respawn jika mati
+        if not char or not hum or hum.Health <= 0 then
+            Notify('⏳ Menunggu respawn...', 2)
+            LocalPlayer.CharacterAdded:Wait()
+            task.wait(1.5)
+        end
+
+        char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        -- Simpan posisi awal
+        local originCF = hrp.CFrame
+
+        -- Teleport ke tujuan
+        hrp.CFrame = CFrame.new(x, y + 3, z)
+        task.wait(0.5)
+        Notify('📍 Tiba di ' .. label, 2)
+
+        task.wait(2)
+
+        -- Balik ke posisi awal
+        char = LocalPlayer.Character
+        hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum2 = char and char:FindFirstChildOfClass("Humanoid")
+        if hrp and hum2 and hum2.Health > 0 then
+            hrp.CFrame = originCF
+            Notify('↩️ Kembali ke posisi awal', 2)
+        end
+    end)
 end
 
 LeftTP:AddButton({
     Text = '🚗  Dealership',
     Func = function()
-        tpTo(732.1171264648438, 3.3621320724487305, 406.0807189941406)
+        safeTP(732.1171264648438, 3.3621320724487305, 406.0807189941406, 'Dealership')
     end,
-    Tooltip = 'Teleport ke Dealership'
+    Tooltip = 'TP ke Dealership lalu balik otomatis'
 })
 
 LeftTP:AddButton({
-    Text = '🏬  Auto-Detect Shop',
-    Func = function()
-        for _, kw in ipairs({"shop","store","market","cashier","vendor"}) do
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("BasePart") and obj.Name:lower():find(kw) then
-                    tpTo(obj.Position.X, obj.Position.Y, obj.Position.Z)
-                    return
-                end
-            end
-        end
-        Notify('❌','Shop tidak ditemukan', 3)
-    end,
-    Tooltip = 'Auto cari & teleport ke shop'
-})
-
-RightTP:AddButton({
     Text = '🍡  Jual/Beli Marshmellow',
     Func = function()
-        tpTo(510.9961853027344, 3.5872106552124023, 598.3929443359375)
+        safeTP(510.9961853027344, 3.5872106552124023, 598.3929443359375, 'Jual/Beli MS')
     end,
-    Tooltip = 'Teleport ke tempat jual/beli marshmellow'
+    Tooltip = 'TP ke tempat jual/beli marshmellow lalu balik'
 })
 
-RightTP:AddButton({
-    Text = '⚡  Interact Terdekat',
-    Func = function()
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-        local myPos = char.HumanoidRootPart.Position
-        local closest, closestDist = nil, math.huge
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("ProximityPrompt") and obj.Enabled then
-                local part = obj.Parent
-                if part and part:IsA("BasePart") then
-                    local dist = (part.Position - myPos).Magnitude
-                    if dist < closestDist then closestDist = dist; closest = obj end
+-- ════════════════════════════════════════════════════════
+--  ESP TAB
+-- ════════════════════════════════════════════════════════
+local LeftESP  = Tabs.ESP:AddLeftGroupbox('👁️ Player ESP')
+local RightESP = Tabs.ESP:AddRightGroupbox('🎨 Warna')
+
+local espEnabled   = false
+local espCache     = {}
+local espColor     = Color3.fromRGB(0, 180, 255) -- default biru
+
+RightESP:AddLabel('Warna ESP:', true)
+RightESP:AddColorPicker('ESPColor', {
+    Default = Color3.fromRGB(0, 180, 255),
+    Title   = 'Warna Box ESP',
+    Callback = function(v)
+        espColor = v
+        -- update semua box yang ada
+        for _, cache in pairs(espCache) do
+            if cache.box then cache.box.Color = v end
+            if cache.tag then cache.tag.Color = v end
+        end
+    end
+})
+
+local function removeESP(player)
+    if espCache[player] then
+        pcall(function() espCache[player].box:Remove() end)
+        pcall(function() espCache[player].tag:Remove() end)
+        espCache[player] = nil
+    end
+end
+
+local function createESP(player)
+    removeESP(player)
+
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Color     = espColor
+    box.Filled    = false
+    box.Visible   = false
+
+    local tag = Drawing.new("Text")
+    tag.Size    = 13
+    tag.Color   = espColor
+    tag.Outline = true
+    tag.Center  = true
+    tag.Visible = false
+    tag.Text    = player.Name
+
+    espCache[player] = {box = box, tag = tag}
+
+    -- Pakai task.spawn agar tidak blok thread utama
+    task.spawn(function()
+        while espCache[player] do
+            task.wait(0.03) -- ~30fps cukup untuk ESP
+            local char = player.Character
+            if espEnabled and char
+                and char:FindFirstChild("HumanoidRootPart")
+                and char:FindFirstChild("Head")
+                and char:FindFirstChildOfClass("Humanoid")
+                and char:FindFirstChildOfClass("Humanoid").Health > 0 then
+
+                local hrpPos, hrpVis  = Camera:WorldToViewportPoint(char.HumanoidRootPart.Position)
+                local headPos, headVis = Camera:WorldToViewportPoint(char.Head.Position)
+
+                if hrpVis and headVis then
+                    local pad = 6
+                    local h = math.abs(headPos.Y - hrpPos.Y) * 1.6 + pad * 2
+                    local w = h * 0.6
+                    box.Size     = Vector2.new(w, h)
+                    box.Position = Vector2.new(hrpPos.X - w/2, headPos.Y - pad)
+                    box.Visible  = true
+                    tag.Position = Vector2.new(hrpPos.X, headPos.Y - pad - 16)
+                    tag.Visible  = true
+                else
+                    box.Visible = false
+                    tag.Visible = false
                 end
+            else
+                box.Visible = false
+                tag.Visible = false
             end
         end
-        if closest then
-            local part = closest.Parent
-            tpTo(part.Position.X, part.Position.Y, part.Position.Z)
-            task.wait(0.5)
-            fireproximityprompt(closest)
-            Notify('📍','Teleport + Interact: '..part.Name, 2)
+    end)
+end
+
+LeftESP:AddToggle('ESPToggle', {
+    Text    = 'ESP Box + Nama Player',
+    Default = false,
+    Callback = function(v)
+        espEnabled = v
+        if v then
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then createESP(plr) end
+            end
+            Players.PlayerAdded:Connect(function(plr)
+                if espEnabled and plr ~= LocalPlayer then createESP(plr) end
+            end)
+            Players.PlayerRemoving:Connect(function(plr)
+                removeESP(plr)
+            end)
         else
-            Notify('❌','Tidak ada ProximityPrompt ditemukan', 3)
+            for plr in pairs(espCache) do removeESP(plr) end
         end
-    end,
-    Tooltip = 'Teleport ke titik E terdekat lalu interact'
+        Notify('👁️ ESP ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
+    end
 })
-
--- ════════════════════════════════════════════════════════
---  SETTINGS TAB
--- ════════════════════════════════════════════════════════
-local SettingsLeft  = Tabs.Settings:AddLeftGroupbox('Settings')
-local SettingsRight = Tabs.Settings:AddRightGroupbox('Theme')
-
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-ThemeManager:SetFolder('KingMJSFree')
-SaveManager:SetFolder('KingMJSFree/configs')
-
-ThemeManager:ApplyToGroupbox(SettingsRight)
-SaveManager:AddIgnoreIsfor(SettingsLeft)
-SaveManager:BuildConfigSection(SettingsLeft)
-
-Library:SetWatermark('KING MJS FREE  |  Mobile v1.0')
-Library:SetWatermarkVisibility(true)
-
-Notify('👑 KING MJS FREE', 'Mobile version loaded!', 4)
