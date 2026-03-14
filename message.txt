@@ -1,0 +1,268 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "👑 KING MJS FREE",
+   LoadingTitle = "👑 KING MJS FREE",
+   LoadingSubtitle = "INVENTORY TRACKER + AUTO MS",
+   ConfigurationSaving = {Enabled = false},
+   KeySystem = false
+})
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local function notify(title, text, duration)
+   Rayfield:Notify({Title = title, Content = text, Duration = duration or 3})
+end
+
+-- ─── TABS ───────────────────────────────────────────────
+local InventoryTab = Window:CreateTab("📦 Inventory")
+local AutoTab      = Window:CreateTab("⚙️ Auto MS")
+local ESPTab       = Window:CreateTab("👁️ ESP")
+
+notify("👑 KING MJS FREE", "Script loaded successfully!", 4)
+
+-- ─── INVENTORY TRACKER ──────────────────────────────────
+local itemNames = {
+    "Water",
+    "Gelatin",
+    "Sugar Block Bag",
+    "Empty Bag",
+}
+
+local itemLabels = {}
+
+-- Fungsi hitung jumlah item di Backpack + Character
+local function countItem(name)
+    local count = 0
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    local char = LocalPlayer.Character
+
+    if bp then
+        for _, item in ipairs(bp:GetChildren()) do
+            if item:IsA("Tool") and item.Name:find(name) then
+                count = count + 1
+            end
+        end
+    end
+    if char then
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") and item.Name:find(name) then
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+
+-- Buat label per item di Inventory Tab
+for _, name in ipairs(itemNames) do
+    local label = InventoryTab:CreateLabel(name .. "  ›  0")
+    itemLabels[name] = label
+end
+
+-- Update inventory setiap 1 detik
+task.spawn(function()
+    while true do
+        task.wait(1)
+        for _, name in ipairs(itemNames) do
+            local count = countItem(name)
+            if itemLabels[name] then
+                itemLabels[name]:Set(name .. "  ›  " .. count)
+            end
+        end
+    end
+end)
+
+-- ─── AUTO MARSHMELLOW ───────────────────────────────────
+local autoFarm = false
+local currentStep = 1
+local stepCooldown = 0
+local lastCheck = 0
+
+local phaseNames = {
+    [1] = "💧 Water",
+    [2] = "🧂 Sugar Block",
+    [3] = "🟡 Gelatin",
+    [4] = "🎒 Empty Bag",
+}
+
+local phaseLabel  = AutoTab:CreateLabel("PHASE  ›  Idle")
+local stepLabel   = AutoTab:CreateLabel("STEP   ›  1 / 4")
+
+local function pressE()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.25)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function hasInstruction(text)
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return false end
+    for _, ui in ipairs(pg:GetDescendants()) do
+        if ui:IsA("TextLabel") or ui:IsA("TextButton") then
+            local t = ui.Text
+            if t and t:find(text) then return true end
+        end
+    end
+    return false
+end
+
+local function selectInventoryItem(itemName)
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if not bp then return false end
+    for _, item in ipairs(bp:GetChildren()) do
+        if item:IsA("Tool") and item.Name:find(itemName) then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(item)
+            return true
+        end
+    end
+    return false
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    if not autoFarm then return end
+
+    stepCooldown = math.max(0, stepCooldown - dt)
+    if stepCooldown > 0 then return end
+
+    lastCheck = lastCheck + dt
+    if lastCheck < 0.3 then return end
+    lastCheck = 0
+
+    -- Update label fase
+    phaseLabel:Set("PHASE  ›  " .. (phaseNames[currentStep] or "Idle"))
+    stepLabel:Set("STEP   ›  " .. currentStep .. " / 4")
+
+    if currentStep == 1 and selectInventoryItem("Water") then
+        pressE()
+        currentStep = 2
+        stepCooldown = 1
+    elseif currentStep == 2 and hasInstruction("Dump the sugar block") and selectInventoryItem("Sugar Block Bag") then
+        pressE()
+        currentStep = 3
+        stepCooldown = 1
+    elseif currentStep == 3 and hasInstruction("Pour gelatin") and selectInventoryItem("Gelatin") then
+        pressE()
+        currentStep = 4
+        stepCooldown = 1
+    elseif currentStep == 4 and hasInstruction("Bag the solution into the empty") and selectInventoryItem("Empty Bag") then
+        pressE()
+        currentStep = 1
+        stepCooldown = 1
+    elseif hasInstruction("You must hold out a bottle of water") then
+        currentStep = 1
+        stepCooldown = 1
+    end
+end)
+
+AutoTab:CreateToggle({
+    Name = "▶  Auto Farm ON/OFF",
+    CurrentValue = false,
+    Callback = function(v)
+        autoFarm = v
+        currentStep = 1
+        phaseLabel:Set("PHASE  ›  " .. (v and phaseNames[1] or "Idle"))
+        stepLabel:Set("STEP   ›  1 / 4")
+        if v then
+            notify("⚙️ Auto Farm", "Auto farm ENABLED", 3)
+        else
+            notify("⚙️ Auto Farm", "Auto farm DISABLED", 3)
+        end
+    end
+})
+
+-- ─── ESP ────────────────────────────────────────────────
+local espEnabled = false
+local espCache = {}
+
+local function removeESP(player)
+    if espCache[player] then
+        for _, obj in pairs(espCache[player]) do
+            obj:Remove()
+        end
+        espCache[player] = nil
+    end
+end
+
+local function createESP(player)
+    removeESP(player)
+
+    local boxOutline = Drawing.new("Square")
+    boxOutline.Thickness = 2
+    boxOutline.Color = Color3.fromRGB(0, 180, 255) -- biru neon sesuai tema
+    boxOutline.Filled = false
+    boxOutline.Visible = false
+
+    local nameTag = Drawing.new("Text")
+    nameTag.Size = 13
+    nameTag.Color = Color3.fromRGB(0, 220, 255)
+    nameTag.Outline = true
+    nameTag.Center = true
+    nameTag.Visible = false
+    nameTag.Text = player.Name
+
+    espCache[player] = {boxOutline, nameTag}
+
+    RunService.RenderStepped:Connect(function()
+        local char = player.Character
+        if espEnabled and char
+            and char:FindFirstChild("HumanoidRootPart")
+            and char:FindFirstChild("Head")
+            and char:FindFirstChildOfClass("Humanoid")
+            and char:FindFirstChildOfClass("Humanoid").Health > 0 then
+
+            local root = char.HumanoidRootPart
+            local head = char.Head
+            local hrpPos, hrpVis = Camera:WorldToViewportPoint(root.Position)
+            local headPos, headVis = Camera:WorldToViewportPoint(head.Position)
+
+            if hrpVis and headVis then
+                local padding = 6
+                local height = math.abs(headPos.Y - hrpPos.Y) * 1.6 + (padding * 2)
+                local width = height * 0.6
+
+                boxOutline.Size = Vector2.new(width, height)
+                boxOutline.Position = Vector2.new(hrpPos.X - width / 2, headPos.Y - padding)
+                boxOutline.Visible = true
+
+                nameTag.Position = Vector2.new(hrpPos.X, headPos.Y - padding - 16)
+                nameTag.Visible = true
+            else
+                boxOutline.Visible = false
+                nameTag.Visible = false
+            end
+        else
+            boxOutline.Visible = false
+            if nameTag then nameTag.Visible = false end
+        end
+    end)
+end
+
+ESPTab:CreateToggle({
+    Name = "👁️  ESP Box + Nama",
+    CurrentValue = false,
+    Callback = function(v)
+        espEnabled = v
+        if espEnabled then
+            notify("👁️ ESP", "ESP Enabled", 3)
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then createESP(plr) end
+            end
+            Players.PlayerAdded:Connect(function(plr)
+                if espEnabled and plr ~= LocalPlayer then createESP(plr) end
+            end)
+            Players.PlayerRemoving:Connect(removeESP)
+        else
+            notify("👁️ ESP", "ESP Disabled", 3)
+            for plr, _ in pairs(espCache) do removeESP(plr) end
+        end
+    end
+})
+
+notify("👑 KING MJS FREE", "All set — enjoy!", 3)
