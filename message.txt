@@ -1,5 +1,7 @@
--- // KING MJS FREE | v1.2
--- // Fix: Anti-freeze auto farm | ESP added | Mobile+PC
+-- // KING MJS FREE | v1.3
+-- // Teleport: Kill → Respawn → TP ke tujuan
+-- // Keybind custom untuk hide/show UI
+-- // Mobile + PC
 
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
@@ -14,33 +16,26 @@ local UIS         = game:GetService("UserInputService")
 local Camera      = Workspace.CurrentCamera
 
 local Window = Library:CreateWindow({
-    Title        = 'KING MJS FREE  |  v1.2',
+    Title        = 'KING MJS FREE  |  v1.3',
     Center       = true,
     AutoShow     = true,
     TabPadding   = 8,
     MenuFadeTime = 0.2
 })
 
--- Keybind hide/show UI (RightShift PC)
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        Library:ToggleUI()
-    end
-end)
-
 local Tabs = {
     Main     = Window:AddTab('Main'),
     AutoFarm = Window:AddTab('Auto Farm'),
     Teleport = Window:AddTab('Teleport'),
     ESP      = Window:AddTab('ESP'),
+    Settings = Window:AddTab('Settings'),
 }
 
 local function Notify(msg, dur)
     Library:Notify(msg, dur or 3)
 end
 
-Notify('👑 KING MJS FREE v1.2\n[RightShift] = Hide/Show UI', 4)
+Notify('👑 KING MJS FREE v1.3 loaded!', 4)
 
 -- ════════════════════════════════════════════════════════
 --  MAIN TAB
@@ -92,7 +87,6 @@ end)
 
 -- ════════════════════════════════════════════════════════
 --  AUTO FARM TAB
---  FIX FREEZE: cache instruction check, pakai task.spawn
 -- ════════════════════════════════════════════════════════
 local LeftAuto  = Tabs.AutoFarm:AddLeftGroupbox('⚙️ Auto MS')
 local RightAuto = Tabs.AutoFarm:AddRightGroupbox('📋 Status')
@@ -112,27 +106,19 @@ local phaseLabel  = RightAuto:AddLabel('Phase   :  Idle', true)
 local stepLabel   = RightAuto:AddLabel('Step    :  1 / 4', true)
 local statusLabel = RightAuto:AddLabel('Status  :  OFF', true)
 
--- Cache instruction text agar tidak loop berat tiap frame
+-- Cache instruction (anti freeze)
 local cachedInstructions = {}
-local instrUpdateTime = 0
-
-local function updateInstructionCache()
-    cachedInstructions = {}
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then return end
-    for _, ui in ipairs(pg:GetDescendants()) do
-        if (ui:IsA("TextLabel") or ui:IsA("TextButton")) and ui.Text and #ui.Text > 0 then
-            cachedInstructions[#cachedInstructions+1] = ui.Text
-        end
-    end
-end
-
--- Update cache tiap 0.5 detik di thread terpisah (anti freeze)
 task.spawn(function()
     while true do
         task.wait(0.5)
-        if autoFarm then
-            updateInstructionCache()
+        if not autoFarm then continue end
+        cachedInstructions = {}
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then continue end
+        for _, ui in ipairs(pg:GetDescendants()) do
+            if (ui:IsA("TextLabel") or ui:IsA("TextButton")) and ui.Text and #ui.Text > 0 then
+                cachedInstructions[#cachedInstructions+1] = ui.Text
+            end
         end
     end
 end)
@@ -154,10 +140,7 @@ local function findNearestPrompt()
             local part = obj.Parent
             if part and part:IsA("BasePart") then
                 local dist = (part.Position - myPos).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closest = obj
-                end
+                if dist < closestDist then closestDist = dist; closest = obj end
             end
         end
     end
@@ -166,9 +149,7 @@ end
 
 local function pressE()
     local prompt = findNearestPrompt()
-    if prompt then
-        fireproximityprompt(prompt)
-    end
+    if prompt then fireproximityprompt(prompt) end
 end
 
 local function selectItem(itemName)
@@ -183,15 +164,11 @@ local function selectItem(itemName)
     return false
 end
 
--- Auto farm loop di task.spawn terpisah (BUKAN Heartbeat) — anti freeze
 task.spawn(function()
     while true do
         task.wait(0.3)
         if not autoFarm then continue end
-        if stepCooldown > 0 then
-            stepCooldown = stepCooldown - 0.3
-            continue
-        end
+        if stepCooldown > 0 then stepCooldown -= 0.3; continue end
 
         phaseLabel:SetText('Phase   :  ' .. (phaseNames[currentStep] or 'Idle'))
         stepLabel:SetText('Step    :  ' .. currentStep .. ' / 4')
@@ -229,65 +206,91 @@ LeftAuto:AddToggle('AutoFarmToggle', {
 
 -- ════════════════════════════════════════════════════════
 --  TELEPORT TAB
+--  Flow: Pencet → Kill karakter → tunggu respawn → TP tujuan
 -- ════════════════════════════════════════════════════════
 local LeftTP  = Tabs.Teleport:AddLeftGroupbox('📍 Teleport')
 local RightTP = Tabs.Teleport:AddRightGroupbox('ℹ️ Info')
 
-RightTP:AddLabel('• TP ke tujuan', true)
-RightTP:AddLabel('• Notify saat tiba', true)
-RightTP:AddLabel('• Otomatis balik', true)
+RightTP:AddLabel('Flow Teleport:', true)
+RightTP:AddLabel('1. Karakter di-kill', true)
+RightTP:AddLabel('2. Tunggu respawn', true)
+RightTP:AddLabel('3. Langsung TP tujuan', true)
 
-local function safeTP(x, y, z, label)
+local tpDestination = nil  -- simpan tujuan sementara
+local tpPending     = false
+
+-- Listener: saat karakter respawn & ada tujuan pending
+local function onCharacterAdded(char)
+    if not tpPending or not tpDestination then return end
+    tpPending = false
+
+    task.spawn(function()
+        -- Tunggu HRP siap
+        local hrp = char:WaitForChild("HumanoidRootPart", 10)
+        local hum = char:WaitForChild("Humanoid", 10)
+        if not hrp or not hum then return end
+
+        -- Tunggu karakter benar-benar hidup
+        task.wait(1)
+        if hum.Health <= 0 then
+            hum.Died:Wait()
+            task.wait(1)
+        end
+
+        hrp.CFrame = CFrame.new(
+            tpDestination.x,
+            tpDestination.y + 3,
+            tpDestination.z
+        )
+        Notify('📍 Tiba di ' .. tpDestination.label .. '!', 3)
+        tpDestination = nil
+    end)
+end
+
+-- Connect ke karakter sekarang dan yang akan datang
+if LocalPlayer.Character then
+    onCharacterAdded(LocalPlayer.Character)
+end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+local function killAndTP(x, y, z, label)
     task.spawn(function()
         local char = LocalPlayer.Character
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
 
-        -- Tunggu respawn jika mati
         if not char or not hum or hum.Health <= 0 then
+            -- Karakter sudah mati, langsung set pending
+            tpDestination = {x=x, y=y, z=z, label=label}
+            tpPending = true
             Notify('⏳ Menunggu respawn...', 2)
-            LocalPlayer.CharacterAdded:Wait()
-            task.wait(1.5)
+            return
         end
 
-        char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
+        -- Set tujuan sebelum kill
+        tpDestination = {x=x, y=y, z=z, label=label}
+        tpPending = true
 
-        -- Simpan posisi awal
-        local originCF = hrp.CFrame
+        Notify('💀 Teleport: respawn dulu...', 2)
 
-        -- Teleport ke tujuan
-        hrp.CFrame = CFrame.new(x, y + 3, z)
-        task.wait(0.5)
-        Notify('📍 Tiba di ' .. label, 2)
-
-        task.wait(2)
-
-        -- Balik ke posisi awal
-        char = LocalPlayer.Character
-        hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        local hum2 = char and char:FindFirstChildOfClass("Humanoid")
-        if hrp and hum2 and hum2.Health > 0 then
-            hrp.CFrame = originCF
-            Notify('↩️ Kembali ke posisi awal', 2)
-        end
+        -- Kill karakter
+        hum.Health = 0
     end)
 end
 
 LeftTP:AddButton({
     Text = '🚗  Dealership',
     Func = function()
-        safeTP(732.1171264648438, 3.3621320724487305, 406.0807189941406, 'Dealership')
+        killAndTP(732.1171264648438, 3.3621320724487305, 406.0807189941406, 'Dealership')
     end,
-    Tooltip = 'TP ke Dealership lalu balik otomatis'
+    Tooltip = 'Kill → Respawn → TP ke Dealership'
 })
 
 LeftTP:AddButton({
     Text = '🍡  Jual/Beli Marshmellow',
     Func = function()
-        safeTP(510.9961853027344, 3.5872106552124023, 598.3929443359375, 'Jual/Beli MS')
+        killAndTP(510.9961853027344, 3.5872106552124023, 598.3929443359375, 'Jual/Beli MS')
     end,
-    Tooltip = 'TP ke tempat jual/beli marshmellow lalu balik'
+    Tooltip = 'Kill → Respawn → TP ke Jual/Beli MS'
 })
 
 -- ════════════════════════════════════════════════════════
@@ -296,17 +299,15 @@ LeftTP:AddButton({
 local LeftESP  = Tabs.ESP:AddLeftGroupbox('👁️ Player ESP')
 local RightESP = Tabs.ESP:AddRightGroupbox('🎨 Warna')
 
-local espEnabled   = false
-local espCache     = {}
-local espColor     = Color3.fromRGB(0, 180, 255) -- default biru
+local espEnabled = false
+local espCache   = {}
+local espColor   = Color3.fromRGB(0, 180, 255)
 
-RightESP:AddLabel('Warna ESP:', true)
 RightESP:AddColorPicker('ESPColor', {
-    Default = Color3.fromRGB(0, 180, 255),
-    Title   = 'Warna Box ESP',
+    Default  = Color3.fromRGB(0, 180, 255),
+    Title    = 'Warna Box ESP',
     Callback = function(v)
         espColor = v
-        -- update semua box yang ada
         for _, cache in pairs(espCache) do
             if cache.box then cache.box.Color = v end
             if cache.tag then cache.tag.Color = v end
@@ -326,25 +327,17 @@ local function createESP(player)
     removeESP(player)
 
     local box = Drawing.new("Square")
-    box.Thickness = 2
-    box.Color     = espColor
-    box.Filled    = false
-    box.Visible   = false
+    box.Thickness = 2; box.Color = espColor; box.Filled = false; box.Visible = false
 
     local tag = Drawing.new("Text")
-    tag.Size    = 13
-    tag.Color   = espColor
-    tag.Outline = true
-    tag.Center  = true
-    tag.Visible = false
-    tag.Text    = player.Name
+    tag.Size = 13; tag.Color = espColor; tag.Outline = true
+    tag.Center = true; tag.Visible = false; tag.Text = player.Name
 
     espCache[player] = {box = box, tag = tag}
 
-    -- Pakai task.spawn agar tidak blok thread utama
     task.spawn(function()
         while espCache[player] do
-            task.wait(0.03) -- ~30fps cukup untuk ESP
+            task.wait(0.033)
             local char = player.Character
             if espEnabled and char
                 and char:FindFirstChild("HumanoidRootPart")
@@ -359,18 +352,16 @@ local function createESP(player)
                     local pad = 6
                     local h = math.abs(headPos.Y - hrpPos.Y) * 1.6 + pad * 2
                     local w = h * 0.6
-                    box.Size     = Vector2.new(w, h)
+                    box.Size = Vector2.new(w, h)
                     box.Position = Vector2.new(hrpPos.X - w/2, headPos.Y - pad)
-                    box.Visible  = true
+                    box.Visible = true
                     tag.Position = Vector2.new(hrpPos.X, headPos.Y - pad - 16)
-                    tag.Visible  = true
+                    tag.Visible = true
                 else
-                    box.Visible = false
-                    tag.Visible = false
+                    box.Visible = false; tag.Visible = false
                 end
             else
-                box.Visible = false
-                tag.Visible = false
+                box.Visible = false; tag.Visible = false
             end
         end
     end)
@@ -388,12 +379,40 @@ LeftESP:AddToggle('ESPToggle', {
             Players.PlayerAdded:Connect(function(plr)
                 if espEnabled and plr ~= LocalPlayer then createESP(plr) end
             end)
-            Players.PlayerRemoving:Connect(function(plr)
-                removeESP(plr)
-            end)
+            Players.PlayerRemoving:Connect(removeESP)
         else
             for plr in pairs(espCache) do removeESP(plr) end
         end
         Notify('👁️ ESP ' .. (v and 'ON ✅' or 'OFF ❌'), 2)
     end
 })
+
+-- ════════════════════════════════════════════════════════
+--  SETTINGS TAB — Keybind Custom Hide/Show UI
+-- ════════════════════════════════════════════════════════
+local LeftSettings = Tabs.Settings:AddLeftGroupbox('⌨️ Keybind')
+local RightSettings = Tabs.Settings:AddRightGroupbox('🎨 Theme')
+
+LeftSettings:AddLabel('Tekan tombol di bawah\nlalu pencet key yg kamu mau', true)
+
+-- Keybind custom untuk toggle UI
+LeftSettings:AddKeybind('UIKeybind', {
+    Text    = 'Hide / Show UI',
+    Default = 'RightShift',
+    Mode    = 'Toggle',
+    Callback = function()
+        Library:ToggleUI()
+    end,
+})
+
+LeftSettings:AddLabel('Default: RightShift', true)
+
+-- Theme
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+ThemeManager:SetFolder('KingMJSFree')
+SaveManager:SetFolder('KingMJSFree/configs')
+ThemeManager:ApplyToGroupbox(RightSettings)
+
+Library:SetWatermark('KING MJS FREE  |  v1.3')
+Library:SetWatermarkVisibility(true)
