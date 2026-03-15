@@ -513,6 +513,34 @@ end)
 
 -- Auto farm logic persis original
 -- pressE: auto detect PC vs Mobile
+local function findBoxPrompt()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = char.HumanoidRootPart.Position
+    local closest, closestDist = nil, math.huge
+
+    -- Cari ProximityPrompt di sekitar Stove/Cooking Pot
+    local interior = Workspace:FindFirstChild("Map") and
+                     Workspace.Map:FindFirstChild("Houses") and
+                     Workspace.Map.Houses:FindFirstChild("BH2") and
+                     Workspace.Map.Houses.BH2:FindFirstChild("Interior")
+
+    local searchRoot = interior or Workspace
+
+    for _, obj in ipairs(searchRoot:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled then
+            local part = obj.Parent
+            if part and part:IsA("BasePart") then
+                local dist = (part.Position - myPos).Magnitude
+                if dist < 15 and dist < closestDist then
+                    closestDist = dist
+                    closest = obj
+                end
+            end
+        end
+    end
+    return closest
+end
 local function pressE()
     -- Coba VirtualInputManager (PC/executor yang support)
     local ok = pcall(function()
@@ -580,15 +608,59 @@ RunService.Heartbeat:Connect(function(dt)
     phaseLblRef.Text = "PHASE   ›  " .. (phaseNames[currentStep] or "Idle")
     stepLblRef.Text  = "STEP    ›  " .. currentStep .. " / 4"
 
-    if currentStep == 1 and selectInventoryItem("Water") then
-        pressE(); currentStep = 2; stepCooldown = 1
-    elseif currentStep == 2 and hasInstruction("Dump the sugar block") and selectInventoryItem("Sugar Block Bag") then
-        pressE(); currentStep = 3; stepCooldown = 1
-    elseif currentStep == 3 and hasInstruction("Pour gelatin") and selectInventoryItem("Gelatin") then
-        pressE(); currentStep = 4; stepCooldown = 1
-    elseif currentStep == 4 and hasInstruction("Bag the solution into the empty") and selectInventoryItem("Empty Bag") then
-        pressE(); marshmallowCount += 1; currentStep = 1; stepCooldown = 1
-    elseif hasInstruction("You must hold out a bottle of water") then
+    -- Cek bahan tersedia sebelum lanjut
+    local hasWater  = countItem("Water") > 0
+    local hasSugar  = countItem("Sugar Block Bag") > 0
+    local hasGelatin = countItem("Gelatin") > 0
+    local hasBag    = countItem("Empty Bag") > 0
+
+    if currentStep == 1 then
+        if not hasWater then
+            -- Tidak ada water, stop farm
+            autoFarm = false
+            autoFarmRunning = false
+            statusLblRef.Text = "STATUS  ›  BAHAN HABIS"
+            statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
+            phaseLblRef.Text = "PHASE   ›  Idle"
+            stepLblRef.Text  = "STEP    ›  1 / 4"
+            return
+        end
+        if selectInventoryItem("Water") then
+            pressE(); currentStep = 2; stepCooldown = 1
+        end
+    elseif currentStep == 2 then
+        if not hasSugar then
+            autoFarm = false; autoFarmRunning = false
+            statusLblRef.Text = "STATUS  ›  BAHAN HABIS"
+            statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
+            currentStep = 1; return
+        end
+        if hasInstruction("Dump the sugar block") and selectInventoryItem("Sugar Block Bag") then
+            pressE(); currentStep = 3; stepCooldown = 1
+        end
+    elseif currentStep == 3 then
+        if not hasGelatin then
+            autoFarm = false; autoFarmRunning = false
+            statusLblRef.Text = "STATUS  ›  BAHAN HABIS"
+            statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
+            currentStep = 1; return
+        end
+        if hasInstruction("Pour gelatin") and selectInventoryItem("Gelatin") then
+            pressE(); currentStep = 4; stepCooldown = 1
+        end
+    elseif currentStep == 4 then
+        if not hasBag then
+            autoFarm = false; autoFarmRunning = false
+            statusLblRef.Text = "STATUS  ›  BAHAN HABIS"
+            statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
+            currentStep = 1; return
+        end
+        if hasInstruction("Bag the solution into the empty") and selectInventoryItem("Empty Bag") then
+            pressE(); marshmallowCount += 1; currentStep = 1; stepCooldown = 1
+        end
+    end
+
+    if hasInstruction("You must hold out a bottle of water") then
         currentStep = 1; stepCooldown = 1
     end
 end)
@@ -617,22 +689,24 @@ end
 if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
-local function killAndTP(x, y, z)
+local function tpTo(x, y, z)
     task.spawn(function()
         local char = LocalPlayer.Character
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         tpDestination = {x=x, y=y, z=z}
         tpPending = true
-        if char and hum and hum.Health > 0 then hum.Health = 0 end
+        if char and hum and hum.Health > 0 then
+            hum.Health = 0
+        end
     end)
 end
 
 makeButton(pageTeleport, "🚗  Dealership", Color3.fromRGB(0, 110, 220), 2, function()
-    killAndTP(732.1171264648438, 3.3621320724487305, 406.0807189941406)
+    tpTo(732.1171264648438, 3.3621320724487305, 406.0807189941406, "Dealership")
 end)
 
 makeButton(pageTeleport, "🍡  Jual/Beli Marshmellow", Color3.fromRGB(180, 80, 0), 3, function()
-    killAndTP(510.9961853027344, 3.5872106552124023, 598.3929443359375)
+    tpTo(510.9961853027344, 3.5872106552124023, 598.3929443359375, "Jual/Beli MS")
 end)
 
 makeSection(pageTeleport, "ℹ️ Info")
