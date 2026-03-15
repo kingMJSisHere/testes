@@ -11,7 +11,18 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService        = game:GetService("TweenService")
 local Camera              = Workspace.CurrentCamera
 
-repeat task.wait() until LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+-- ════════════════════════════════════════════════════════
+--  ANTI AFK
+-- ════════════════════════════════════════════════════════
+local VirtualUser = game:GetService("VirtualUser")
+local antiAFK = true
+
+LocalPlayer.Idled:Connect(function()
+    if not antiAFK then return end
+    VirtualUser:Button2Down(Vector2.zero, Camera.CFrame)
+    task.wait(1)
+    VirtualUser:Button2Up(Vector2.zero, Camera.CFrame)
+end)
 
 -- ════════════════════════════════════════════════════════
 --  MAIN GUI
@@ -817,6 +828,11 @@ makeLabel(pageSettings, "by qie and arul",             Color3.fromRGB(180, 180, 
 makeLabel(pageSettings, "K = Minimize (PC)",           Color3.fromRGB(255, 210, 50), 4)
 makeLabel(pageSettings, "Tombol 👁️ = Hide/Show (HP)",  Color3.fromRGB(0, 220, 120), 5)
 makeLabel(pageSettings, "Drag header untuk pindahkan", Color3.fromRGB(160, 160, 180), 6)
+
+makeSection(pageSettings, "🛡️ Anti AFK")
+makeToggle(pageSettings, "Anti AFK", true, 7, function(v)
+    antiAFK = v
+end)
 
 -- ════════════════════════════════════════════════════════
 --  TOMBOL HIDE/SHOW UI — untuk mobile (pojok kanan bawah)
