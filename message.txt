@@ -571,7 +571,7 @@ local autoSell   = false
 local isSelling  = false
 local sellLblRef, _ = makeLabel(pageAuto, "AUTO SELL  ›  OFF", Color3.fromRGB(255, 80, 80), 8)
 local SELL_X, SELL_Y, SELL_Z = 510.9961853027344, 3.5872106552124023, 598.3929443359375
-local MS_ITEMS = {"Small Marshmallow Bag","Medium Marshmallow Bag","Large Marshmallow Bag","Marshmallow","Marshmallow"}
+local MS_ITEMS = {"Small Marsmellow Bag","Medium Marsmellow Bag","Large Marsmellow Bag","Marshmallow","Marshmellow"}
 
 local function countMS()
     local total = 0
@@ -791,7 +791,7 @@ RunService.Heartbeat:Connect(function(dt)
             currentStep = 1; return
         end
         if hasInstruction("Dump the sugar block") and selectInventoryItem("Sugar Block Bag") then
-            pressE(); currentStep = 3; stepCooldown = 1
+            pressE(); currentStep = 3; stepCooldown = 2 -- jeda 1 detik extra setelah sugar
         end
     elseif currentStep == 3 then
         if not hasGelatin then
@@ -801,7 +801,7 @@ RunService.Heartbeat:Connect(function(dt)
             currentStep = 1; return
         end
         if hasInstruction("Pour gelatin") and selectInventoryItem("Gelatin") then
-            pressE(); currentStep = 4; stepCooldown = 1
+            pressE(); currentStep = 4; stepCooldown = 2 -- jeda 1 detik extra setelah gelatin
         end
     elseif currentStep == 4 then
         if not hasBag then
