@@ -565,126 +565,6 @@ makeToggle(pageAuto, "Auto-Farm Marshmallows", false, 5, function(v)
     end
 end)
 
--- Auto Sell
-makeSection(pageAuto, "💰 Auto Sell (Naik Kendaraan)")
-local autoSell   = false
-local isSelling  = false
-local sellLblRef, _ = makeLabel(pageAuto, "AUTO SELL  ›  OFF", Color3.fromRGB(255, 80, 80), 8)
-local SELL_X, SELL_Y, SELL_Z = 510.9961853027344, 3.5872106552124023, 598.3929443359375
-local MS_ITEMS = {"Small Marsmellow Bag","Medium Marsmellow Bag","Large Marsmellow Bag","Marshmallow","Marshmellow"}
-
-local function countMS()
-    local total = 0
-    for _, name in ipairs(MS_ITEMS) do total += countItem(name) end
-    return total
-end
-
-local function equipMS()
-    local bp  = LocalPlayer:FindFirstChild("Backpack")
-    local char = LocalPlayer.Character
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    if not bp or not hum then return end
-    for _, name in ipairs(MS_ITEMS) do
-        for _, item in ipairs(bp:GetChildren()) do
-            if item:IsA("Tool") and item.Name:find(name) then
-                hum:EquipTool(item); task.wait(0.3); return
-            end
-        end
-    end
-end
-
-local function findSellPrompt()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = char.HumanoidRootPart.Position
-    local closest, closestDist = nil, math.huge
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Enabled then
-            local part = obj.Parent
-            if part and part:IsA("BasePart") then
-                local dist = (part.Position - myPos).Magnitude
-                if dist < 12 and dist < closestDist then closestDist = dist; closest = obj end
-            end
-        end
-    end
-    return closest
-end
-
-local function doSell()
-    if isSelling then return end
-    if countMS() == 0 then return end
-    isSelling = true
-    local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then isSelling = false; return end
-    local originCF = hrp.CFrame
-    sellLblRef.Text = "AUTO SELL  ›  JALAN..."
-    sellLblRef.TextColor3 = Color3.fromRGB(255, 210, 50)
-    hum:MoveTo(Vector3.new(SELL_X, SELL_Y + 1, SELL_Z))
-    local timeout = 0
-    repeat
-        task.wait(0.3); timeout += 0.3
-        char = LocalPlayer.Character
-        hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if not hrp then isSelling = false; return end
-    until (hrp.Position - Vector3.new(SELL_X, SELL_Y, SELL_Z)).Magnitude < 8 or timeout >= 20
-    task.wait(0.3)
-    sellLblRef.Text = "AUTO SELL  ›  JUAL..."
-    for _, name in ipairs(MS_ITEMS) do
-        while countItem(name) > 0 do
-            equipMS(); task.wait(0.3)
-            local prompt = findSellPrompt()
-            if prompt then fireproximityprompt(prompt)
-            else pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                task.wait(0.25)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-            end) end
-            task.wait(0.5)
-        end
-    end
-    sellLblRef.Text = "AUTO SELL  ›  BALIK..."
-    hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if hum and hrp then
-        hum:MoveTo(originCF.Position)
-        local t2 = 0
-        repeat task.wait(0.3); t2 += 0.3
-            hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        until not hrp or (hrp.Position - originCF.Position).Magnitude < 5 or t2 >= 20
-    end
-    sellLblRef.Text = "AUTO SELL  ›  ON"
-    sellLblRef.TextColor3 = Color3.fromRGB(0, 220, 100)
-    isSelling = false
-end
-
-makeToggle(pageAuto, "Auto Sell (saat naik kendaraan)", false, 9, function(v)
-    autoSell = v
-    sellLblRef.Text = "AUTO SELL  ›  " .. (v and "ON" or "OFF")
-    sellLblRef.TextColor3 = v and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(255, 80, 80)
-end)
-
-task.spawn(function()
-    local wasInVehicle = false
-    while true do
-        task.wait(0.5)
-        if not autoSell then wasInVehicle = false; continue end
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
-        local inVehicle = hrp.AssemblyLinearVelocity.Magnitude > 5
-        local seat = char:FindFirstChildOfClass("Seat") or char:FindFirstChildOfClass("VehicleSeat")
-        if seat then inVehicle = true end
-        if inVehicle and not wasInVehicle then
-            task.wait(0.5)
-            task.spawn(doSell)
-        end
-        wasInVehicle = inVehicle
-    end
-end)
-
 -- Auto farm logic
 local function findBoxPrompt()
     local char = LocalPlayer.Character
@@ -737,7 +617,9 @@ local function hasInstruction(text)
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     if not pg then return false end
     for _, ui in ipairs(pg:GetDescendants()) do
-        if ui:IsA("TextLabel") or ui:IsA("TextButton") then
+        -- Skip UI script sendiri
+        if ui:FindFirstAncestor("KINGMJSFREE") then continue end
+        if (ui:IsA("TextLabel") or ui:IsA("TextButton")) then
             local t = ui.Text
             if t and t:find(text) then return true end
         end
