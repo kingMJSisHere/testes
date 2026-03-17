@@ -539,6 +539,7 @@ local autoFarm     = false
 local currentStep  = 1
 local stepCooldown = 0
 local lastCheck    = 0
+local inputLock = false
 
 local phaseNames = {
     [1] = "💧 Water",
@@ -589,28 +590,42 @@ local function findBoxPrompt()
 end
 
 local function pressE()
+    if inputLock then return end
+    inputLock = true
+
     local ok = pcall(function()
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
         task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
     end)
+
     if not ok then
         local char = LocalPlayer.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
         local myPos = char.HumanoidRootPart.Position
         local closest, closestDist = nil, math.huge
+
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("ProximityPrompt") and obj.Enabled then
                 local part = obj.Parent
                 if part and part:IsA("BasePart") then
                     local dist = (part.Position - myPos).Magnitude
-                    if dist < 15 and dist < closestDist then closestDist = dist; closest = obj end
+                    if dist < 15 and dist < closestDist then
+                        closestDist = dist
+                        closest = obj
+                    end
                 end
             end
         end
-        if closest then fireproximityprompt(closest) end
+
+        if closest then
+            fireproximityprompt(closest)
+        end
     end
-    task.wait(0.25)
+
+    task.wait(0.6) -- penting: delay biar ga spam
+    inputLock = false
 end
 
 local function hasInstruction(text)
@@ -673,7 +688,7 @@ RunService.Heartbeat:Connect(function(dt)
             currentStep = 1; return
         end
         if hasInstruction("Dump the sugar block") and selectInventoryItem("Sugar Block Bag") then
-            pressE(); currentStep = 3; stepCooldown = 2 -- jeda 1 detik extra setelah sugar
+            pressE(); currentStep = 3; stepCooldown = 2.5 -- jeda 1 detik extra setelah sugar
         end
     elseif currentStep == 3 then
         if not hasGelatin then
