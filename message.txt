@@ -1,6 +1,7 @@
 -- // KING MJS FREE | v2.0
 -- // Custom GUI: Draggable, Minimize, Tabs
 -- // Auto Farm: logic original (VirtualInputManager)
+-- // Fix: GUI tetap bisa di-drag + tombol aktif setelah respawn
 
 local Players             = game:GetService("Players")
 local LocalPlayer         = Players.LocalPlayer
@@ -31,6 +32,8 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "KINGMJSFREE"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 999
+screenGui.IgnoreGuiInset = true
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 -- Main Frame
@@ -40,7 +43,7 @@ mainFrame.Position = UDim2.new(0.5, -210, 0.5, -260)
 mainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
-mainFrame.Draggable = true
+mainFrame.Draggable = false -- matikan bawaan, pakai custom drag
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
@@ -108,6 +111,49 @@ end
 local minBtn   = makeHeaderBtn(-100, Color3.fromRGB(255, 180, 0), "−", 22)
 local closeBtn = makeHeaderBtn(-66,  Color3.fromRGB(220, 50, 50),  "✕", 18)
 
+-- ════════════════════════════════════════════════════════
+--  CUSTOM DRAG — tidak terblokir saat respawn
+-- ════════════════════════════════════════════════════════
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function updateDrag(input)
+    local delta = input.Position - dragStart
+    mainFrame.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + delta.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + delta.Y
+    )
+end
+
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging  = true
+        dragStart = input.Position
+        startPos  = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+header.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if dragging and input == dragInput then
+        updateDrag(input)
+    end
+end)
+
 -- ─── TAB BAR ───────────────────────────────────────────
 local tabBar = Instance.new("Frame")
 tabBar.Size = UDim2.new(1, -16, 0, 36)
@@ -144,7 +190,7 @@ local function toggleMinimize()
     isMinimized = not isMinimized
     local target = isMinimized and miniHeight or fullHeight
     TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Size = target}):Play()
-    tabBar.Visible    = not isMinimized
+    tabBar.Visible      = not isMinimized
     contentArea.Visible = not isMinimized
     minBtn.Text = isMinimized and "□" or "−"
 end
@@ -202,13 +248,11 @@ local function makeTab(name)
     tabPages[name] = page
 
     btn.MouseButton1Click:Connect(function()
-        -- Deactivate all
         for n, b in pairs(tabs) do
             b.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
             b.TextColor3 = Color3.fromRGB(160, 160, 180)
             tabPages[n].Visible = false
         end
-        -- Activate this
         btn.BackgroundColor3 = Color3.fromRGB(0, 100, 220)
         btn.TextColor3 = Color3.new(1,1,1)
         page.Visible = true
@@ -428,14 +472,13 @@ local pageTeleport = makeTab("📍 TP")
 local pageESP      = makeTab("👁️ ESP")
 local pageSettings = makeTab("⚙️ Set")
 
--- Activate first tab
 tabs["📦 Main"].BackgroundColor3 = Color3.fromRGB(0, 100, 220)
 tabs["📦 Main"].TextColor3 = Color3.new(1,1,1)
 pageMain.Visible = true
 activeTab = "📦 Main"
 
 -- ════════════════════════════════════════════════════════
---  MAIN TAB — Inventory + Stats
+--  MAIN TAB
 -- ════════════════════════════════════════════════════════
 makeSection(pageMain, "📦 Inventory")
 
@@ -522,45 +565,156 @@ makeToggle(pageAuto, "Auto-Farm Marshmallows", false, 5, function(v)
     end
 end)
 
--- Auto farm logic persis original
--- pressE: auto detect PC vs Mobile
-local function findBoxPrompt()
+-- Auto Sell
+makeSection(pageAuto, "💰 Auto Sell (Naik Kendaraan)")
+local autoSell   = false
+local isSelling  = false
+local sellLblRef, _ = makeLabel(pageAuto, "AUTO SELL  ›  OFF", Color3.fromRGB(255, 80, 80), 8)
+local SELL_X, SELL_Y, SELL_Z = 510.9961853027344, 3.5872106552124023, 598.3929443359375
+local MS_ITEMS = {"Small Marshmallow Bag","Medium Marshmallow Bag","Large Marshmallow Bag","Marshmallow","Marshmallow"}
+
+local function countMS()
+    local total = 0
+    for _, name in ipairs(MS_ITEMS) do total += countItem(name) end
+    return total
+end
+
+local function equipMS()
+    local bp  = LocalPlayer:FindFirstChild("Backpack")
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not bp or not hum then return end
+    for _, name in ipairs(MS_ITEMS) do
+        for _, item in ipairs(bp:GetChildren()) do
+            if item:IsA("Tool") and item.Name:find(name) then
+                hum:EquipTool(item); task.wait(0.3); return
+            end
+        end
+    end
+end
+
+local function findSellPrompt()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
     local myPos = char.HumanoidRootPart.Position
     local closest, closestDist = nil, math.huge
-
-    -- Cari ProximityPrompt di sekitar Stove/Cooking Pot
-    local interior = Workspace:FindFirstChild("Map") and
-                     Workspace.Map:FindFirstChild("Houses") and
-                     Workspace.Map.Houses:FindFirstChild("BH2") and
-                     Workspace.Map.Houses.BH2:FindFirstChild("Interior")
-
-    local searchRoot = interior or Workspace
-
-    for _, obj in ipairs(searchRoot:GetDescendants()) do
+    for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.Enabled then
             local part = obj.Parent
             if part and part:IsA("BasePart") then
                 local dist = (part.Position - myPos).Magnitude
-                if dist < 15 and dist < closestDist then
-                    closestDist = dist
-                    closest = obj
-                end
+                if dist < 12 and dist < closestDist then closestDist = dist; closest = obj end
             end
         end
     end
     return closest
 end
+
+local function doSell()
+    if isSelling then return end
+    if countMS() == 0 then return end
+    isSelling = true
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then isSelling = false; return end
+    local originCF = hrp.CFrame
+    sellLblRef.Text = "AUTO SELL  ›  JALAN..."
+    sellLblRef.TextColor3 = Color3.fromRGB(255, 210, 50)
+    hum:MoveTo(Vector3.new(SELL_X, SELL_Y + 1, SELL_Z))
+    local timeout = 0
+    repeat
+        task.wait(0.3); timeout += 0.3
+        char = LocalPlayer.Character
+        hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp then isSelling = false; return end
+    until (hrp.Position - Vector3.new(SELL_X, SELL_Y, SELL_Z)).Magnitude < 8 or timeout >= 20
+    task.wait(0.3)
+    sellLblRef.Text = "AUTO SELL  ›  JUAL..."
+    for _, name in ipairs(MS_ITEMS) do
+        while countItem(name) > 0 do
+            equipMS(); task.wait(0.3)
+            local prompt = findSellPrompt()
+            if prompt then fireproximityprompt(prompt)
+            else pcall(function()
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                task.wait(0.25)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+            end) end
+            task.wait(0.5)
+        end
+    end
+    sellLblRef.Text = "AUTO SELL  ›  BALIK..."
+    hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if hum and hrp then
+        hum:MoveTo(originCF.Position)
+        local t2 = 0
+        repeat task.wait(0.3); t2 += 0.3
+            hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        until not hrp or (hrp.Position - originCF.Position).Magnitude < 5 or t2 >= 20
+    end
+    sellLblRef.Text = "AUTO SELL  ›  ON"
+    sellLblRef.TextColor3 = Color3.fromRGB(0, 220, 100)
+    isSelling = false
+end
+
+makeToggle(pageAuto, "Auto Sell (saat naik kendaraan)", false, 9, function(v)
+    autoSell = v
+    sellLblRef.Text = "AUTO SELL  ›  " .. (v and "ON" or "OFF")
+    sellLblRef.TextColor3 = v and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(255, 80, 80)
+end)
+
+task.spawn(function()
+    local wasInVehicle = false
+    while true do
+        task.wait(0.5)
+        if not autoSell then wasInVehicle = false; continue end
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        local inVehicle = hrp.AssemblyLinearVelocity.Magnitude > 5
+        local seat = char:FindFirstChildOfClass("Seat") or char:FindFirstChildOfClass("VehicleSeat")
+        if seat then inVehicle = true end
+        if inVehicle and not wasInVehicle then
+            task.wait(0.5)
+            task.spawn(doSell)
+        end
+        wasInVehicle = inVehicle
+    end
+end)
+
+-- Auto farm logic
+local function findBoxPrompt()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = char.HumanoidRootPart.Position
+    local closest, closestDist = nil, math.huge
+    local interior = Workspace:FindFirstChild("Map") and
+                     Workspace.Map:FindFirstChild("Houses") and
+                     Workspace.Map.Houses:FindFirstChild("BH2") and
+                     Workspace.Map.Houses.BH2:FindFirstChild("Interior")
+    local searchRoot = interior or Workspace
+    for _, obj in ipairs(searchRoot:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled then
+            local part = obj.Parent
+            if part and part:IsA("BasePart") then
+                local dist = (part.Position - myPos).Magnitude
+                if dist < 15 and dist < closestDist then closestDist = dist; closest = obj end
+            end
+        end
+    end
+    return closest
+end
+
 local function pressE()
-    -- Coba VirtualInputManager (PC/executor yang support)
     local ok = pcall(function()
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
         task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
     end)
     if not ok then
-        -- Fallback mobile: fireproximityprompt
         local char = LocalPlayer.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return end
         local myPos = char.HumanoidRootPart.Position
@@ -570,16 +724,11 @@ local function pressE()
                 local part = obj.Parent
                 if part and part:IsA("BasePart") then
                     local dist = (part.Position - myPos).Magnitude
-                    if dist < 15 and dist < closestDist then
-                        closestDist = dist
-                        closest = obj
-                    end
+                    if dist < 15 and dist < closestDist then closestDist = dist; closest = obj end
                 end
             end
         end
-        if closest then
-            fireproximityprompt(closest)
-        end
+        if closest then fireproximityprompt(closest) end
     end
     task.wait(0.25)
 end
@@ -619,26 +768,21 @@ RunService.Heartbeat:Connect(function(dt)
     phaseLblRef.Text = "PHASE   ›  " .. (phaseNames[currentStep] or "Idle")
     stepLblRef.Text  = "STEP    ›  " .. currentStep .. " / 4"
 
-    -- Cek bahan tersedia sebelum lanjut
-    local hasWater  = countItem("Water") > 0
-    local hasSugar  = countItem("Sugar Block Bag") > 0
+    local hasWater   = countItem("Water") > 0
+    local hasSugar   = countItem("Sugar Block Bag") > 0
     local hasGelatin = countItem("Gelatin") > 0
-    local hasBag    = countItem("Empty Bag") > 0
+    local hasBag     = countItem("Empty Bag") > 0
 
     if currentStep == 1 then
         if not hasWater then
-            -- Tidak ada water, stop farm
-            autoFarm = false
-            autoFarmRunning = false
+            autoFarm = false; autoFarmRunning = false
             statusLblRef.Text = "STATUS  ›  BAHAN HABIS"
             statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
             phaseLblRef.Text = "PHASE   ›  Idle"
             stepLblRef.Text  = "STEP    ›  1 / 4"
             return
         end
-        if selectInventoryItem("Water") then
-            pressE(); currentStep = 2; stepCooldown = 1
-        end
+        if selectInventoryItem("Water") then pressE(); currentStep = 2; stepCooldown = 1 end
     elseif currentStep == 2 then
         if not hasSugar then
             autoFarm = false; autoFarmRunning = false
@@ -697,7 +841,9 @@ local function onCharacterAdded(char)
     end)
 end
 
-if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
+if LocalPlayer.Character then
+    task.spawn(function() onCharacterAdded(LocalPlayer.Character) end)
+end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
 local function tpTo(x, y, z)
@@ -706,25 +852,27 @@ local function tpTo(x, y, z)
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         tpDestination = {x=x, y=y, z=z}
         tpPending = true
-        if char and hum and hum.Health > 0 then
-            hum.Health = 0
-        end
+        if char and hum and hum.Health > 0 then hum.Health = 0 end
     end)
 end
 
 makeButton(pageTeleport, "🚗  Dealership", Color3.fromRGB(0, 110, 220), 2, function()
-    tpTo(732.1171264648438, 3.3621320724487305, 406.0807189941406, "Dealership")
+    tpTo(732.1171264648438, 3.3621320724487305, 406.0807189941406)
 end)
 
 makeButton(pageTeleport, "🍡  Jual/Beli Marshmellow", Color3.fromRGB(180, 80, 0), 3, function()
-    tpTo(510.9961853027344, 3.5872106552124023, 598.3929443359375, "Jual/Beli MS")
+    tpTo(510.9961853027344, 3.5872106552124023, 598.3929443359375)
+end)
+
+makeButton(pageTeleport, "⭐  Tier", Color3.fromRGB(120, 0, 200), 4, function()
+    tpTo(1094.7406005859375, 3.188796043395996, 158.09230041503906)
 end)
 
 makeSection(pageTeleport, "ℹ️ Info")
 makeLabel(pageTeleport, "Kill → Respawn → TP ke tujuan", Color3.fromRGB(140, 140, 160), 4)
 
 -- ════════════════════════════════════════════════════════
---  ESP TAB — BillboardGui
+--  ESP TAB
 -- ════════════════════════════════════════════════════════
 makeSection(pageESP, "👁️ Player ESP")
 
@@ -751,28 +899,23 @@ local function createESPBillboard(player)
     local char = player.Character or player.CharacterAdded:Wait()
     local hrp  = char:WaitForChild("HumanoidRootPart", 5)
     if not hrp then return end
-
     local container = Instance.new("Folder")
     container.Name  = "ESP_"..player.Name
     container.Parent = espFolder
-
     local bb = Instance.new("BillboardGui")
     bb.Name = "ESPBillboard"; bb.Size = UDim2.new(0,120,0,30)
     bb.StudsOffset = Vector3.new(0,3.5,0); bb.AlwaysOnTop = true
     bb.Adornee = hrp; bb.Parent = hrp
-
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Size = UDim2.new(1,0,1,0); nameLabel.BackgroundTransparency = 1
     nameLabel.Text = player.Name; nameLabel.TextColor3 = espColor
     nameLabel.TextStrokeTransparency = 0; nameLabel.TextStrokeColor3 = Color3.new(0,0,0)
     nameLabel.Font = Enum.Font.GothamBold; nameLabel.TextSize = 14
     nameLabel.Parent = bb
-
     local selBox = Instance.new("SelectionBox")
     selBox.Color3 = espColor; selBox.LineThickness = 0.05
     selBox.SurfaceTransparency = 1; selBox.Adornee = char
     selBox.Parent = container
-
     task.spawn(function()
         while container.Parent do
             task.wait(0.1)
@@ -783,7 +926,6 @@ local function createESPBillboard(player)
             nameLabel.TextColor3 = espColor; selBox.Color3 = espColor
         end
     end)
-
     player.CharacterAdded:Connect(function()
         container:Destroy()
         if espEnabled then task.wait(1); createESPBillboard(player) end
@@ -807,16 +949,13 @@ makeToggle(pageESP, "ESP Box + Nama Player", false, 2, function(v)
 end)
 
 makeSection(pageESP, "🎨 Warna ESP")
-
 local espColorMap = {
-    ["🔵 Biru"]   = Color3.fromRGB(0, 180, 255),
-    ["🔴 Merah"]  = Color3.fromRGB(255, 50, 50),
-    ["🟢 Hijau"]  = Color3.fromRGB(0, 255, 100),
-    ["🟡 Kuning"] = Color3.fromRGB(255, 220, 0),
-    ["⚪ Putih"]  = Color3.fromRGB(255, 255, 255),
+    ["🔵 Biru"]=Color3.fromRGB(0,180,255), ["🔴 Merah"]=Color3.fromRGB(255,50,50),
+    ["🟢 Hijau"]=Color3.fromRGB(0,255,100), ["🟡 Kuning"]=Color3.fromRGB(255,220,0),
+    ["⚪ Putih"]=Color3.fromRGB(255,255,255)
 }
 makeDropdown(pageESP, "Warna Box", {"🔵 Biru","🔴 Merah","🟢 Hijau","🟡 Kuning","⚪ Putih"}, 5, function(v)
-    espColor = espColorMap[v] or Color3.fromRGB(0, 180, 255)
+    espColor = espColorMap[v] or Color3.fromRGB(0,180,255)
 end)
 
 -- ════════════════════════════════════════════════════════
@@ -835,7 +974,7 @@ makeToggle(pageSettings, "Anti AFK", true, 7, function(v)
 end)
 
 -- ════════════════════════════════════════════════════════
---  TOMBOL HIDE/SHOW UI — untuk mobile (pojok kanan bawah)
+--  TOMBOL MOBILE
 -- ════════════════════════════════════════════════════════
 local mobileSg = Instance.new("ScreenGui")
 mobileSg.Name = "KINGMobileBtn"
@@ -855,11 +994,7 @@ mobileBtn.BorderSizePixel = 0
 mobileBtn.ZIndex = 999
 mobileBtn.Parent = mobileSg
 Instance.new("UICorner", mobileBtn).CornerRadius = UDim.new(1, 0)
-
-local mobileStroke = Instance.new("UIStroke")
-mobileStroke.Color = Color3.fromRGB(0, 150, 255)
-mobileStroke.Thickness = 2
-mobileStroke.Parent = mobileBtn
+Instance.new("UIStroke", mobileBtn).Color = Color3.fromRGB(0, 150, 255)
 
 mobileBtn.MouseButton1Click:Connect(function()
     toggleMinimize()
