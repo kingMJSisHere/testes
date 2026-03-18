@@ -539,7 +539,6 @@ local autoFarm     = false
 local currentStep  = 1
 local stepCooldown = 0
 local lastCheck    = 0
-local inputLock = false
 
 local phaseNames = {
     [1] = "💧 Water",
@@ -590,42 +589,28 @@ local function findBoxPrompt()
 end
 
 local function pressE()
-    if inputLock then return end
-    inputLock = true
-
     local ok = pcall(function()
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
         task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
     end)
-
     if not ok then
         local char = LocalPlayer.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-
         local myPos = char.HumanoidRootPart.Position
         local closest, closestDist = nil, math.huge
-
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("ProximityPrompt") and obj.Enabled then
                 local part = obj.Parent
                 if part and part:IsA("BasePart") then
                     local dist = (part.Position - myPos).Magnitude
-                    if dist < 15 and dist < closestDist then
-                        closestDist = dist
-                        closest = obj
-                    end
+                    if dist < 15 and dist < closestDist then closestDist = dist; closest = obj end
                 end
             end
         end
-
-        if closest then
-            fireproximityprompt(closest)
-        end
+        if closest then fireproximityprompt(closest) end
     end
-
-    task.wait(0.6) -- penting: delay biar ga spam
-    inputLock = false
+    task.wait(0.25)
 end
 
 local function hasInstruction(text)
@@ -643,17 +628,38 @@ local function hasInstruction(text)
 end
 
 local function selectInventoryItem(itemName)
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not hum then return false end
+
+    -- cek backpack dulu
     local bp = LocalPlayer:FindFirstChild("Backpack")
-    if not bp then return false end
-    for _, item in ipairs(bp:GetChildren()) do
-        if item:IsA("Tool") and item.Name:find(itemName) then
-            LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(item)
-            return true
+    if bp then
+        for _, item in ipairs(bp:GetChildren()) do
+            if item:IsA("Tool") and item.Name:find(itemName) then
+                hum:EquipTool(item)
+                return true
+            end
         end
     end
+
+    -- cek karakter (item sudah di-equip / di tangan)
+    for _, item in ipairs(char:GetChildren()) do
+        if item:IsA("Tool") and item.Name:find(itemName) then
+            return true -- sudah equipped, tidak perlu EquipTool lagi
+        end
+    end
+
     return false
 end
 
+-- ════════════════════════════════════════════════════════
+--  FIX v3: 
+--  - Tidak ada timeout fallback (penyebab crash)
+--  - stepCooldown cukup panjang agar proses sebelumnya selesai
+--  - step 4 tidak pakai hasInstruction
+--  - instruksi dicek pakai kata kunci pendek (case-insensitive)
+-- ════════════════════════════════════════════════════════
 RunService.Heartbeat:Connect(function(dt)
     if not autoFarm then return end
     stepCooldown = math.max(0, stepCooldown - dt)
@@ -679,7 +685,12 @@ RunService.Heartbeat:Connect(function(dt)
             stepLblRef.Text  = "STEP    ›  1 / 4"
             return
         end
-        if selectInventoryItem("Water") then pressE(); currentStep = 2; stepCooldown = 1 end
+        if selectInventoryItem("Water") then
+            currentStep = 2
+            stepCooldown = 4  -- tunggu animasi water selesai dulu
+            pressE()
+        end
+
     elseif currentStep == 2 then
         if not hasSugar then
             autoFarm = false; autoFarmRunning = false
@@ -687,9 +698,13 @@ RunService.Heartbeat:Connect(function(dt)
             statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
             currentStep = 1; return
         end
-        if hasInstruction("Dump the sugar block") and selectInventoryItem("Sugar Block Bag") then
-            pressE(); currentStep = 3; stepCooldown = 2.5 -- jeda 1 detik extra setelah sugar
+        -- cek instruksi pakai kata kunci pendek supaya tidak gagal match
+        if hasInstruction("sugar") and selectInventoryItem("Sugar Block Bag") then
+            currentStep = 3
+            stepCooldown = 4
+            pressE()
         end
+
     elseif currentStep == 3 then
         if not hasGelatin then
             autoFarm = false; autoFarmRunning = false
@@ -697,23 +712,130 @@ RunService.Heartbeat:Connect(function(dt)
             statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
             currentStep = 1; return
         end
-        if hasInstruction("Pour gelatin") and selectInventoryItem("Gelatin") then
-            pressE(); currentStep = 4; stepCooldown = 2 -- jeda 1 detik extra setelah gelatin
+        if hasInstruction("gelatin") and selectInventoryItem("Gelatin") then
+            currentStep = 4
+            stepCooldown = 4
+            pressE()
         end
+
     elseif currentStep == 4 then
         if not hasBag then
-            autoFarm = false; autoFarmRunning = false
-            statusLblRef.Text = "STATUS  ›  BAHAN HABIS"
-            statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
-            currentStep = 1; return
+            -- cek apakah Empty Bag sudah berubah jadi Marshmallow Bag
+            local hasMarshmallow = countItem("Marshmallow Bag") > 0
+            if hasMarshmallow then
+                -- proses selesai, lanjut ke phase 1
+                currentStep = 1
+                marshmallowCount += 1
+                stepCooldown = 1
+            else
+                -- bahan habis sebelum proses selesai
+                autoFarm = false; autoFarmRunning = false
+                statusLblRef.Text = "STATUS  ›  BAHAN HABIS"
+                statusLblRef.TextColor3 = Color3.fromRGB(255, 180, 0)
+                currentStep = 1
+            end
+            return
         end
-        if hasInstruction("Bag the solution into the empty") and selectInventoryItem("Empty Bag") then
-            pressE(); marshmallowCount += 1; currentStep = 1; stepCooldown = 1
+        -- Empty Bag masih ada, equip dan interact
+        if selectInventoryItem("Empty Bag") then
+            stepCooldown = 2  -- jeda kecil setelah pressE, sisanya tunggu hasBag = false
+            pressE()
         end
     end
 
-    if hasInstruction("You must hold out a bottle of water") then
-        currentStep = 1; stepCooldown = 1
+    if hasInstruction("bottle of water") then
+        currentStep = 1; stepCooldown = 2
+    end
+end)
+
+-- ════════════════════════════════════════════════════════
+--  AUTO SELL
+-- ════════════════════════════════════════════════════════
+makeSection(pageAuto, "🛒 Auto Sell")
+
+local autoSell        = false
+local sellCooldown    = 0
+local lastSellCheck   = 0
+local sellStatusRef, _ = makeLabel(pageAuto, "SELL  ›  OFF", Color3.fromRGB(255, 80, 80), 10)
+local sellItemRef,  _ = makeLabel(pageAuto, "ITEM  ›  -",   Color3.fromRGB(160, 160, 180), 11)
+
+-- urutan prioritas: small dulu, lalu medium, lalu large
+local sellOrder = {
+    "Small Marshmallow Bag",
+    "Medium Marshmallow Bag",
+    "Large Marshmallow Bag",
+}
+
+makeToggle(pageAuto, "Auto Sell Marshmallow Bag", false, 12, function(v)
+    autoSell = v
+    sellStatusRef.Text = "SELL  ›  " .. (v and "ON" or "OFF")
+    sellStatusRef.TextColor3 = v and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(255, 80, 80)
+    if not v then
+        sellItemRef.Text = "ITEM  ›  -"
+    end
+end)
+
+-- loop sell berjalan di thread terpisah (tidak di Heartbeat) → tidak freeze
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if not autoSell then continue end
+
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not char or not hum or hum.Health <= 0 then continue end
+
+        -- cari item sell berdasarkan prioritas
+        local targetItem = nil
+        for _, name in ipairs(sellOrder) do
+            if countItem(name) > 0 then
+                targetItem = name
+                break
+            end
+        end
+
+        if not targetItem then
+            sellItemRef.Text = "ITEM  ›  Tidak ada"
+            sellItemRef.TextColor3 = Color3.fromRGB(120, 120, 140)
+            continue
+        end
+
+        sellItemRef.Text = "ITEM  ›  " .. targetItem
+        sellItemRef.TextColor3 = Color3.fromRGB(0, 220, 120)
+
+        -- equip item
+        if selectInventoryItem(targetItem) then
+            task.wait(0.3)
+            -- cari proximity prompt terdekat untuk sell
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then continue end
+            local myPos = hrp.Position
+            local closest, closestDist = nil, math.huge
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") and obj.Enabled then
+                    local part = obj.Parent
+                    if part and part:IsA("BasePart") then
+                        local dist = (part.Position - myPos).Magnitude
+                        if dist < 12 and dist < closestDist then
+                            closestDist = dist
+                            closest = obj
+                        end
+                    end
+                end
+            end
+            if closest then
+                -- gunakan fireproximityprompt agar tidak freeze
+                local ok = pcall(fireproximityprompt, closest)
+                if not ok then
+                    pcall(function()
+                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        task.wait(0.05)
+                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    end)
+                end
+                task.wait(1)  -- jeda antar sell
+            end
+        end
     end
 end)
 
